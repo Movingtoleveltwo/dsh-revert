@@ -8,9 +8,9 @@ window.__ModuleLoader__.load({
     const name = "dsh-revert";
     const inject = ["slots", "locale", "connection", "sessions", "uiConversation", "uiSession"];
 
-    const STORAGE_KEY = "dsh_reverted_history_v1";
+    const STORAGE_KEY = "dsh_reverted_uuids_v2";
 
-    function getRevertedList() {
+    function getRevertedKeys() {
       try {
         return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
       } catch (e) {
@@ -18,11 +18,14 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function saveRevertedEntry(entry) {
+    function saveRevertedKey(anchorKey) {
+      if (!anchorKey) return;
       try {
-        const list = getRevertedList();
-        list.push(entry);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        const list = getRevertedKeys();
+        if (!list.includes(anchorKey)) {
+          list.push(anchorKey);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        }
       } catch (e) {}
     }
 
@@ -58,7 +61,7 @@ window.__ModuleLoader__.load({
           background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
           color: var(--dsw-alias-label-secondary, #cdd6f4);
         }
-        /* 只精准隐藏被撤销的特定历史节点，绝不影响后续发送的新消息 */
+        /* 仅对打上被撤销标记的特定历史节点进行隐藏 */
         [data-dsh-reverted="true"] {
           display: none !important;
         }
@@ -234,40 +237,31 @@ window.__ModuleLoader__.load({
       document.execCommand("insertText", false, text);
     }
 
+    // 严禁使用 text 文本做匹配！唯一使用 DSH 每条消息独一无二的 anchorKey UUID
     function applySavedRevertStates() {
-      const revertedList = getRevertedList();
-      if (!revertedList.length) return;
+      const revertedKeys = getRevertedKeys();
+      if (!revertedKeys.length) return;
 
       const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[class*="userRow"]');
       userRows.forEach((row) => {
-        const bubble = row.querySelector('[class*="bubble"]');
-        const text = bubble ? bubble.textContent.trim() : row.textContent.trim();
         const anchorNode = row.closest('[data-chat-anchor-key]') || row;
         const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
 
-        const matched = revertedList.some(item => 
-          (item.anchorKey && item.anchorKey === anchorKey) ||
-          (item.text && item.text === text)
-        );
-
-        if (matched) {
+        // 仅当 anchorKey 精准命中被撤销的 UUID 时才隐藏
+        if (anchorKey && revertedKeys.includes(anchorKey)) {
           const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
           let curr = flowItem;
           while (curr) {
             curr.setAttribute('data-dsh-reverted', 'true');
-            // 如果遇到下一个没被撤销的用户气泡，则截断
+            // 如果遇到下一个用户气泡且不是被撤销的 UUID，则停止向后截断
             if (curr !== flowItem) {
               const nextUser = curr.querySelector('div[data-chat-flow-kind="user"], div[class*="userRow"]');
               if (nextUser) {
-                const nextBubble = nextUser.querySelector('[class*="bubble"]');
-                const nextText = nextBubble ? nextBubble.textContent.trim() : nextUser.textContent.trim();
                 const nextAnchor = nextUser.closest('[data-chat-anchor-key]') || nextUser;
                 const nextKey = nextAnchor.getAttribute('data-chat-anchor-key') || '';
-                const nextIsReverted = revertedList.some(item => 
-                  (item.anchorKey && item.anchorKey === nextKey) ||
-                  (item.text && item.text === nextText)
-                );
-                if (!nextIsReverted) break;
+                if (!revertedKeys.includes(nextKey)) {
+                  break;
+                }
               }
             }
             curr = curr.nextElementSibling;
@@ -305,15 +299,12 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 存入 localStorage 持久化，确保 F5 刷新后依然保持干净
-          saveRevertedEntry({
-            sessionId,
-            text: promptText,
-            anchorKey,
-            time: Date.now()
-          });
+          // 2. 存入 localStorage（仅存唯一的 UUID anchorKey，绝不存 text）
+          if (anchorKey) {
+            saveRevertedKey(anchorKey);
+          }
 
-          // 3. 立即将当前该轮及所有兄弟节点标记隐藏
+          // 3. 立即将当前该轮及当下已有的兄弟节点标记隐藏
           const targetEl = document.querySelector('.dsh-pending-revert');
           if (targetEl) {
             targetEl.classList.remove('dsh-pending-revert');
@@ -360,7 +351,7 @@ window.__ModuleLoader__.load({
         const bubble = row.querySelector('[class*="bubble"]');
         if (!actionsRow && !bubble) return;
 
-        // 获取该节点的 seq 与最外层 flowItem
+        // 获取该节点的 seq, anchorKey 与最外层 flowItem
         const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
         const anchorNode = row.closest('[data-chat-anchor-key]') || row;
         const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
