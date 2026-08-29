@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, createElement: h } = React;
 
     const name = "dsh-revert";
-    const inject = ["slots", "locale", "connection"];
+    const inject = ["slots", "locale", "connection", "sessions"];
 
     // 样式注入：1:1 复刻 Antigravity 确认撤销弹窗与图标
     function injectStyles() {
@@ -158,32 +158,73 @@ window.__ModuleLoader__.load({
     }
 
     let globalSetModalState = null;
+    let globalCtx = null;
+
+    function fillComposerText(text) {
+      const composer = document.querySelector("textarea");
+      if (!composer) return;
+      try {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+        if (setter) {
+          setter.call(composer, text);
+        } else {
+          composer.value = text;
+        }
+        composer.dispatchEvent(new Event("input", { bubbles: true }));
+        composer.dispatchEvent(new Event("change", { bubbles: true }));
+        composer.focus();
+        // 光标移至末尾
+        composer.setSelectionRange(text.length, text.length);
+      } catch (e) {
+        console.warn("[dsh-revert] fill composer error:", e);
+      }
+    }
 
     function GlobalRevertPortal() {
-      const [modalState, setModalState] = useState({ open: false, initialText: "", hasCodeChanges: false, loading: false });
+      const [modalState, setModalState] = useState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false });
       globalSetModalState = setModalState;
 
       const handleConfirm = async () => {
         setModalState((s) => ({ ...s, loading: true }));
         try {
+          const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
+          const targetSeq = modalState.targetSeq;
+
+          // 1. 调用后端快照还原代码
           await fetch("/dsh-revert/rpc", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               action: "revert",
-              payload: { restoreFiles: true }
+              payload: { sessionId, atSeq: targetSeq, restoreFiles: true }
             })
           }).catch(() => {});
 
-          // 将 Prompt 自动回填到底部主输入框并获得焦点
-          const composer = document.querySelector("textarea");
-          if (composer && modalState.initialText) {
-            composer.value = modalState.initialText;
-            composer.dispatchEvent(new Event("input", { bubbles: true }));
-            composer.focus();
+          // 2. 截断会话并无缝切换
+          if (globalCtx?.sessions && sessionId && targetSeq !== null) {
+            try {
+              const forkAtSeq = Math.max(0, targetSeq - 1);
+              const childId = await globalCtx.sessions.fork({
+                sessionId,
+                atSeq: forkAtSeq,
+                increaseTitle: false
+              });
+              if (childId) {
+                await globalCtx.sessions.open(childId);
+              }
+            } catch (forkErr) {
+              console.warn("[dsh-revert] fork error:", forkErr);
+            }
           }
 
-          setModalState({ open: false, initialText: "", hasCodeChanges: false, loading: false });
+          // 3. 自动回填 Prompt 到输入框并聚焦
+          setTimeout(() => {
+            if (modalState.initialText) {
+              fillComposerText(modalState.initialText);
+            }
+          }, 150);
+
+          setModalState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false });
         } catch (err) {
           alert("撤销失败: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
@@ -194,12 +235,12 @@ window.__ModuleLoader__.load({
         open: modalState.open,
         hasCodeChanges: modalState.hasCodeChanges,
         loading: modalState.loading,
-        onClose: () => setModalState({ open: false, initialText: "", hasCodeChanges: false, loading: false }),
+        onClose: () => setModalState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false }),
         onConfirm: handleConfirm
       });
     }
 
-    // 在用户消息气泡下方的动作栏（时间与复制图标旁）添加纯图标 ↩ 按钮
+    // 在用户消息气泡下方的动作栏（时间与复制图标旁）挂载 ↩ 按钮
     function attachUserRevertIcons() {
       const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[class*="userRow"]');
       userRows.forEach((row) => {
@@ -208,6 +249,12 @@ window.__ModuleLoader__.load({
         const actionsRow = row.querySelector('[class*="actions"]');
         const bubble = row.querySelector('[class*="bubble"]');
         if (!actionsRow && !bubble) return;
+
+        // 获取该节点的 seq
+        const anchorNode = row.closest('[data-chat-anchor-key]') || row;
+        const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
+        const match = /^(\d+):/.exec(anchorKey);
+        const seq = match ? Number(match[1]) : null;
 
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -228,7 +275,7 @@ window.__ModuleLoader__.load({
           e.stopPropagation();
           const text = bubble ? bubble.textContent.trim() : '';
           if (globalSetModalState) {
-            globalSetModalState({ open: true, initialText: text, hasCodeChanges: false, loading: false });
+            globalSetModalState({ open: true, initialText: text, targetSeq: seq, hasCodeChanges: false, loading: false });
           }
         };
 
@@ -244,6 +291,7 @@ window.__ModuleLoader__.load({
     }
 
     function apply(ctx) {
+      globalCtx = ctx;
       injectStyles();
 
       let portalDiv = document.getElementById("dsh-revert-portal-root");
