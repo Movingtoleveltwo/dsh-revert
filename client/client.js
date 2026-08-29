@@ -40,6 +40,9 @@ window.__ModuleLoader__.load({
           background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
           color: var(--dsw-alias-label-secondary, #cdd6f4);
         }
+        [data-dsh-reverted="true"] {
+          display: none !important;
+        }
       `;
       document.head.appendChild(style);
     }
@@ -217,8 +220,7 @@ window.__ModuleLoader__.load({
         open: false,
         initialText: "",
         targetTurn: null,
-        targetSeq: null,
-        prevTurnTailBtn: null,
+        targetFlowItem: null,
         hasCodeChanges: false,
         loading: false
       });
@@ -229,9 +231,8 @@ window.__ModuleLoader__.load({
         try {
           const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
           const targetTurn = modalState.targetTurn;
-          const targetSeq = modalState.targetSeq;
           const promptText = modalState.initialText;
-          const prevTurnTailBtn = modalState.prevTurnTailBtn;
+          const flowItem = modalState.targetFlowItem;
 
           // 1. 调用后端 RPC 进行文件快照恢复
           await fetch("/dsh-revert/rpc", {
@@ -239,12 +240,11 @@ window.__ModuleLoader__.load({
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               action: "revert",
-              payload: { sessionId, atSeq: targetSeq, restoreFiles: true }
+              payload: { sessionId, atSeq: null, restoreFiles: true }
             })
           }).catch(() => {});
 
-          // 2. 真正的底层会话上下文回滚：
-          // 如果撤销的是第 1 轮（整个会话的起点），直接平滑重置为纯净会话
+          // 2. 如果是第 1 轮撤销，直接平滑重置为纯净会话
           if (targetTurn === 1 || !targetTurn) {
             const brandBtn = document.querySelector('button[class*="brand"], button[aria-label*="新建会话"]');
             if (brandBtn) {
@@ -252,17 +252,30 @@ window.__ModuleLoader__.load({
             } else if (globalCtx?.uiWorkspace && typeof globalCtx.uiWorkspace.startSession === 'function') {
               globalCtx.uiWorkspace.startSession();
             }
-          } else if (prevTurnTailBtn) {
-            // 如果是多轮会话撤销中间轮次，触发上一轮的分支切流
-            prevTurnTailBtn.click();
+          } else {
+            // 如果是第 2 轮及后续轮次，在 DOM 视图中彻底隐藏当前 targetTurn 及所有后续兄弟节点
+            const container = document.querySelector('[data-chat-flow]');
+            if (container) {
+              let found = false;
+              for (const child of Array.from(container.children)) {
+                const childTurn = child.getAttribute('data-chat-turn');
+                if (child === flowItem || child.contains(flowItem) || (targetTurn && childTurn && Number(childTurn) >= targetTurn)) {
+                  found = true;
+                }
+                if (found) {
+                  child.style.setProperty('display', 'none', 'important');
+                  child.setAttribute('data-dsh-reverted', 'true');
+                }
+              }
+            }
           }
 
-          // 3. 将 Prompt 回填到输入框
+          // 3. 将 Prompt 精准回填到输入框
           setTimeout(() => {
             fillComposerText(promptText);
-          }, 350);
+          }, 300);
 
-          setModalState({ open: false, initialText: "", targetTurn: null, targetSeq: null, prevTurnTailBtn: null, hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetTurn: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
         } catch (err) {
           alert("撤销失败: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
@@ -274,7 +287,7 @@ window.__ModuleLoader__.load({
         hasCodeChanges: modalState.hasCodeChanges,
         loading: modalState.loading,
         onClose: () => {
-          setModalState({ open: false, initialText: "", targetTurn: null, targetSeq: null, prevTurnTailBtn: null, hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetTurn: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
         },
         onConfirm: handleConfirm
       });
@@ -290,24 +303,10 @@ window.__ModuleLoader__.load({
         const bubble = row.querySelector('[class*="bubble"]');
         if (!actionsRow && !bubble) return;
 
-        // 获取该节点的 turn 序号与 seq
+        // 获取该节点的 turn 序号与 flowItem
         const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
         const turnAttr = flowItem.getAttribute('data-chat-turn') || row.getAttribute('data-chat-turn');
         const turn = turnAttr ? Number(turnAttr) : null;
-
-        const anchorNode = row.closest('[data-chat-anchor-key]') || row;
-        const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
-        const match = /^(\d+):/.exec(anchorKey);
-        const seq = match ? Number(match[1]) : null;
-
-        // 寻找上一轮的 branch 分支按钮（如果存在）
-        let prevTurnTailBtn = null;
-        if (turn && turn > 1) {
-          const prevTail = document.querySelector(`[data-turn-tail="${turn - 1}"], [data-chat-turn="${turn - 1}"][data-chat-flow-kind="turn-tail"]`);
-          if (prevTail) {
-            prevTurnTailBtn = prevTail.querySelector('button[aria-label*="分支"], button[title*="分支"], button:has(svg[viewBox*="16"])');
-          }
-        }
 
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -333,8 +332,7 @@ window.__ModuleLoader__.load({
               open: true,
               initialText: text,
               targetTurn: turn,
-              targetSeq: seq,
-              prevTurnTailBtn,
+              targetFlowItem: flowItem,
               hasCodeChanges: false,
               loading: false
             });
