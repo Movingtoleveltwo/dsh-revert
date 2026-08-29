@@ -40,7 +40,8 @@ window.__ModuleLoader__.load({
           background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
           color: var(--dsw-alias-label-secondary, #cdd6f4);
         }
-        [data-dsh-revert-hidden="true"] {
+        /* 核心规则：被撤销的 flowItem 以及它后面的所有后续节点，由浏览器 CSS 引擎强力瞬间隐藏 */
+        .dsh-reverted, .dsh-reverted ~ * {
           display: none !important;
         }
       `;
@@ -220,8 +221,6 @@ window.__ModuleLoader__.load({
         open: false,
         initialText: "",
         targetSeq: null,
-        targetTurn: null,
-        targetFlowItem: null,
         hasCodeChanges: false,
         loading: false
       });
@@ -232,9 +231,7 @@ window.__ModuleLoader__.load({
         try {
           const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
           const targetSeq = modalState.targetSeq;
-          const targetTurn = modalState.targetTurn;
           const promptText = modalState.initialText;
-          const flowItem = modalState.targetFlowItem;
 
           // 1. 调用后端 RPC 进行快照与外部文件恢复
           await fetch("/dsh-revert/rpc", {
@@ -246,22 +243,11 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 彻底隐藏本轮及之后所有会话气泡与尾巴节点
-          const container = document.querySelector('[data-chat-flow]') || (flowItem ? flowItem.parentElement : null);
-          if (container) {
-            let found = false;
-            for (const child of Array.from(container.children)) {
-              const itemTurn = child.getAttribute('data-chat-turn');
-              const itemTurnNum = itemTurn ? Number(itemTurn) : null;
-
-              if (child === flowItem || child.contains(flowItem) || (targetTurn !== null && itemTurnNum !== null && itemTurnNum >= targetTurn)) {
-                found = true;
-              }
-              if (found) {
-                child.setAttribute('data-dsh-revert-hidden', 'true');
-                child.style.display = "none";
-              }
-            }
+          // 2. 彻底隐藏本轮及之后所有会话节点（激活 .dsh-reverted 样式，CSS 兄弟选择器 0ms 瞬间强力隐藏）
+          const targetEl = document.querySelector('.dsh-pending-revert');
+          if (targetEl) {
+            targetEl.classList.remove('dsh-pending-revert');
+            targetEl.classList.add('dsh-reverted');
           }
 
           // 3. 尝试 DSH 底层 sessions.fork 切分支
@@ -284,7 +270,7 @@ window.__ModuleLoader__.load({
             fillComposerText(promptText);
           }, 80);
 
-          setModalState({ open: false, initialText: "", targetSeq: null, targetTurn: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false });
         } catch (err) {
           alert("撤销失败: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
@@ -295,7 +281,10 @@ window.__ModuleLoader__.load({
         open: modalState.open,
         hasCodeChanges: modalState.hasCodeChanges,
         loading: modalState.loading,
-        onClose: () => setModalState({ open: false, initialText: "", targetSeq: null, targetTurn: null, targetFlowItem: null, hasCodeChanges: false, loading: false }),
+        onClose: () => {
+          document.querySelectorAll('.dsh-pending-revert').forEach(el => el.classList.remove('dsh-pending-revert'));
+          setModalState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false });
+        },
         onConfirm: handleConfirm
       });
     }
@@ -310,15 +299,12 @@ window.__ModuleLoader__.load({
         const bubble = row.querySelector('[class*="bubble"]');
         if (!actionsRow && !bubble) return;
 
-        // 获取该节点的 seq, turn 与最外层 flowItem
+        // 获取该节点的 seq 与最外层 flowItem
         const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
         const anchorNode = row.closest('[data-chat-anchor-key]') || row;
         const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
         const match = /^(\d+):/.exec(anchorKey);
         const seq = match ? Number(match[1]) : null;
-
-        const turnAttr = flowItem.getAttribute('data-chat-turn') || row.getAttribute('data-chat-turn');
-        const turn = turnAttr ? Number(turnAttr) : null;
 
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -338,13 +324,18 @@ window.__ModuleLoader__.load({
           e.preventDefault();
           e.stopPropagation();
           const text = bubble ? bubble.textContent.trim() : '';
+
+          // 标记当前要撤销的目标 flowItem
+          document.querySelectorAll('.dsh-pending-revert').forEach(el => el.classList.remove('dsh-pending-revert'));
+          if (flowItem) {
+            flowItem.classList.add('dsh-pending-revert');
+          }
+
           if (globalSetModalState) {
             globalSetModalState({
               open: true,
               initialText: text,
               targetSeq: seq,
-              targetTurn: turn,
-              targetFlowItem: flowItem,
               hasCodeChanges: false,
               loading: false
             });
