@@ -243,32 +243,17 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 彻底隐藏本轮及之后所有会话节点（激活 .dsh-reverted 样式，CSS 兄弟选择器 0ms 瞬间强力隐藏）
+          // 2. 原地彻底隐藏本轮及之后所有会话节点（激活 .dsh-reverted 样式，CSS 兄弟选择器 0ms 瞬间强力隐藏）
           const targetEl = document.querySelector('.dsh-pending-revert');
           if (targetEl) {
             targetEl.classList.remove('dsh-pending-revert');
             targetEl.classList.add('dsh-reverted');
           }
 
-          // 3. 尝试 DSH 底层 sessions.fork 切分支
-          if (globalCtx?.sessions && sessionId && targetSeq !== null) {
-            try {
-              const forkAtSeq = Math.max(0, targetSeq - 1);
-              const childId = await globalCtx.sessions.fork({
-                sessionId,
-                atSeq: forkAtSeq,
-                increaseTitle: false
-              });
-              if (childId) {
-                await globalCtx.sessions.open(childId);
-              }
-            } catch (forkErr) {}
-          }
-
-          // 4. 精确回填单份 Prompt 到输入框
+          // 3. 精确回填单份 Prompt 到输入框
           setTimeout(() => {
             fillComposerText(promptText);
-          }, 80);
+          }, 60);
 
           setModalState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false });
         } catch (err) {
