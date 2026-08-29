@@ -163,7 +163,7 @@ window.__ModuleLoader__.load({
     let globalSetModalState = null;
     let globalCtx = null;
 
-    // 基于 Lexical 官方 API 与原生 Textarea 双模式精准写入 Prompt
+    // 精准回填 Prompt 并触发原生 input/change 事件（发送后自动清空）
     function fillComposerText(text) {
       if (!text) return;
       const editorEl = document.querySelector('[data-composer-input="true"]') ||
@@ -171,48 +171,32 @@ window.__ModuleLoader__.load({
                        document.querySelector('textarea');
       if (!editorEl) return;
 
-      // 1. 如果是 Lexical 编辑器实例
-      if (editorEl.__lexicalEditor && typeof editorEl.__lexicalEditor.setEditorState === 'function') {
-        try {
-          const editor = editorEl.__lexicalEditor;
-          const stateJSON = {
-            root: {
-              children: [{
-                children: [{ detail: 0, format: 0, mode: 'normal', style: '', text, type: 'text', version: 1 }],
-                direction: 'ltr', format: '', indent: 0, type: 'paragraph', version: 1
-              }],
-              direction: 'ltr', format: '', indent: 0, type: 'root', version: 1
-            }
-          };
-          editor.setEditorState(editor.parseEditorState(JSON.stringify(stateJSON)));
-          editor.focus();
-          return;
-        } catch (e) {
-          console.warn('[dsh-revert] lexical state write error:', e);
-        }
-      }
+      editorEl.focus();
 
-      // 2. 如果是原生 textarea
+      // 原生 Textarea 处理
       if (editorEl.tagName && editorEl.tagName.toLowerCase() === 'textarea') {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
         if (setter) setter.call(editorEl, text);
         else editorEl.value = text;
         editorEl.dispatchEvent(new Event("input", { bubbles: true }));
         editorEl.dispatchEvent(new Event("change", { bubbles: true }));
-        editorEl.focus();
         editorEl.setSelectionRange(text.length, text.length);
         return;
       }
 
-      // 3. 通用 contenteditable 回退逻辑
-      editorEl.focus();
-      const selection = window.getSelection();
-      const range = document.createRange();
-      range.selectNodeContents(editorEl);
-      selection.removeAllRanges();
-      selection.addRange(range);
-      document.execCommand("delete", false, null);
-      document.execCommand("insertText", false, text);
+      // Lexical / ContentEditable 原生选区文字注入，保证与 SubmitMachine 完整联动并在发送后自动清空
+      try {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(editorEl);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.execCommand("delete", false, null);
+        document.execCommand("insertText", false, text);
+      } catch (e) {
+        editorEl.innerText = text;
+        editorEl.dispatchEvent(new Event("input", { bubbles: true }));
+      }
     }
 
     function GlobalRevertPortal() {
