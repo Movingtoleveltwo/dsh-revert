@@ -160,51 +160,60 @@ window.__ModuleLoader__.load({
     let globalSetModalState = null;
     let globalCtx = null;
 
-    // 清理已有内容并精确写入单份 Prompt 文本
+    // 基于 Lexical 官方 API 与原生 Textarea 双模式精准写入 Prompt
     function fillComposerText(text) {
       if (!text) return;
-      const editor = document.querySelector('[contenteditable="true"]') ||
-                     document.querySelector('[data-lexical-editor="true"]') ||
-                     document.querySelector('textarea');
-      if (!editor) return;
+      const editorEl = document.querySelector('[data-composer-input="true"]') ||
+                       document.querySelector('[contenteditable="true"]') ||
+                       document.querySelector('textarea');
+      if (!editorEl) return;
 
-      editor.focus();
-
-      if (editor.tagName && editor.tagName.toLowerCase() === 'textarea') {
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-        if (setter) setter.call(editor, text);
-        else editor.value = text;
-        editor.dispatchEvent(new Event("input", { bubbles: true }));
-        editor.dispatchEvent(new Event("change", { bubbles: true }));
-        editor.setSelectionRange(text.length, text.length);
-      } else {
-        // Lexical / contenteditable：先彻底选区清空
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(editor);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        document.execCommand("delete", false, null);
-
-        // 插入单份新文本
-        document.execCommand("insertText", false, text);
-
-        if (editor.textContent.trim() !== text.trim()) {
-          editor.textContent = text;
-          editor.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
+      // 1. 如果是 Lexical 编辑器实例
+      if (editorEl.__lexicalEditor && typeof editorEl.__lexicalEditor.setEditorState === 'function') {
+        try {
+          const editor = editorEl.__lexicalEditor;
+          const stateJSON = {
+            root: {
+              children: [{
+                children: [{ detail: 0, format: 0, mode: 'normal', style: '', text, type: 'text', version: 1 }],
+                direction: 'ltr', format: '', indent: 0, type: 'paragraph', version: 1
+              }],
+              direction: 'ltr', format: '', indent: 0, type: 'root', version: 1
+            }
+          };
+          editor.setEditorState(editor.parseEditorState(JSON.stringify(stateJSON)));
+          editor.focus();
+          return;
+        } catch (e) {
+          console.warn('[dsh-revert] lexical state write error:', e);
         }
-
-        // 光标移至末尾
-        const newRange = document.createRange();
-        newRange.selectNodeContents(editor);
-        newRange.collapse(false);
-        selection.removeAllRanges();
-        selection.addRange(newRange);
       }
+
+      // 2. 如果是原生 textarea
+      if (editorEl.tagName && editorEl.tagName.toLowerCase() === 'textarea') {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+        if (setter) setter.call(editorEl, text);
+        else editorEl.value = text;
+        editorEl.dispatchEvent(new Event("input", { bubbles: true }));
+        editorEl.dispatchEvent(new Event("change", { bubbles: true }));
+        editorEl.focus();
+        editorEl.setSelectionRange(text.length, text.length);
+        return;
+      }
+
+      // 3. 通用 contenteditable 回退逻辑
+      editorEl.focus();
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(editorEl);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.execCommand("delete", false, null);
+      document.execCommand("insertText", false, text);
     }
 
     function GlobalRevertPortal() {
-      const [modalState, setModalState] = useState({ open: false, initialText: "", targetSeq: null, targetElement: null, hasCodeChanges: false, loading: false });
+      const [modalState, setModalState] = useState({ open: false, initialText: "", targetSeq: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
       globalSetModalState = setModalState;
 
       const handleConfirm = async () => {
@@ -213,9 +222,9 @@ window.__ModuleLoader__.load({
           const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
           const targetSeq = modalState.targetSeq;
           const promptText = modalState.initialText;
-          const targetEl = modalState.targetElement;
+          const flowItem = modalState.targetFlowItem;
 
-          // 1. 调用后端 RPC 进行快照与文件恢复
+          // 1. 调用后端 RPC 进行快照与外部文件恢复
           await fetch("/dsh-revert/rpc", {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -225,13 +234,13 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 彻底隐藏本轮用户提问气泡及之后的所有回答气泡（从视觉上瞬间回退）
-          if (targetEl) {
-            const flowContainer = document.querySelector('[data-chat-flow]') || targetEl.closest('[class*="column"]');
-            if (flowContainer) {
+          // 2. 彻底隐藏本轮用户提问气泡及随后的所有 AI 思考与回复气泡
+          if (flowItem) {
+            const container = flowItem.parentElement || document.querySelector('[data-chat-flow]');
+            if (container) {
               let found = false;
-              for (const child of Array.from(flowContainer.children)) {
-                if (child === targetEl || child.contains(targetEl)) {
+              for (const child of Array.from(container.children)) {
+                if (child === flowItem || child.contains(flowItem)) {
                   found = true;
                 }
                 if (found) {
@@ -263,7 +272,7 @@ window.__ModuleLoader__.load({
             fillComposerText(promptText);
           }, 80);
 
-          setModalState({ open: false, initialText: "", targetSeq: null, targetElement: null, hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetSeq: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
         } catch (err) {
           alert("撤销失败: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
@@ -274,7 +283,7 @@ window.__ModuleLoader__.load({
         open: modalState.open,
         hasCodeChanges: modalState.hasCodeChanges,
         loading: modalState.loading,
-        onClose: () => setModalState({ open: false, initialText: "", targetSeq: null, targetElement: null, hasCodeChanges: false, loading: false }),
+        onClose: () => setModalState({ open: false, initialText: "", targetSeq: null, targetFlowItem: null, hasCodeChanges: false, loading: false }),
         onConfirm: handleConfirm
       });
     }
@@ -289,7 +298,8 @@ window.__ModuleLoader__.load({
         const bubble = row.querySelector('[class*="bubble"]');
         if (!actionsRow && !bubble) return;
 
-        // 获取该节点的 seq
+        // 获取该节点的 seq 与最外层 flowItem
+        const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
         const anchorNode = row.closest('[data-chat-anchor-key]') || row;
         const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
         const match = /^(\d+):/.exec(anchorKey);
@@ -318,7 +328,7 @@ window.__ModuleLoader__.load({
               open: true,
               initialText: text,
               targetSeq: seq,
-              targetElement: row,
+              targetFlowItem: flowItem,
               hasCodeChanges: false,
               loading: false
             });
