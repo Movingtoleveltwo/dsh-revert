@@ -8,9 +8,9 @@ window.__ModuleLoader__.load({
     const name = "dsh-revert";
     const inject = ["slots", "locale", "connection", "sessions", "uiConversation", "uiSession"];
 
-    const STORAGE_KEY = "dsh_reverted_uuids_v2";
+    const STORAGE_KEY = "dsh_reverted_turns_v3";
 
-    function getRevertedKeys() {
+    function getRevertedEntries() {
       try {
         return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
       } catch (e) {
@@ -18,12 +18,13 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function saveRevertedKey(anchorKey) {
-      if (!anchorKey) return;
+    function saveRevertedTurn(sessionId, turn) {
+      if (turn === null || turn === undefined) return;
       try {
-        const list = getRevertedKeys();
-        if (!list.includes(anchorKey)) {
-          list.push(anchorKey);
+        const list = getRevertedEntries();
+        const exists = list.some(item => item.sessionId === sessionId && item.turn === turn);
+        if (!exists) {
+          list.push({ sessionId, turn, time: Date.now() });
           localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
         }
       } catch (e) {}
@@ -237,36 +238,23 @@ window.__ModuleLoader__.load({
       document.execCommand("insertText", false, text);
     }
 
-    // 严禁使用 text 文本做匹配！唯一使用 DSH 每条消息独一无二的 anchorKey UUID
+    // 按回合索引进行原子级隔离，只隐藏被撤销的 turn，绝不误伤后续任何回合
     function applySavedRevertStates() {
-      const revertedKeys = getRevertedKeys();
-      if (!revertedKeys.length) return;
+      const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
+      const revertedEntries = getRevertedEntries();
+      if (!revertedEntries.length) return;
 
-      const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[class*="userRow"]');
-      userRows.forEach((row) => {
-        const anchorNode = row.closest('[data-chat-anchor-key]') || row;
-        const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
+      const activeRevertedTurns = revertedEntries
+        .filter(item => !sessionId || item.sessionId === sessionId)
+        .map(item => item.turn);
 
-        // 仅当 anchorKey 精准命中被撤销的 UUID 时才隐藏
-        if (anchorKey && revertedKeys.includes(anchorKey)) {
-          const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
-          let curr = flowItem;
-          while (curr) {
-            curr.setAttribute('data-dsh-reverted', 'true');
-            // 如果遇到下一个用户气泡且不是被撤销的 UUID，则停止向后截断
-            if (curr !== flowItem) {
-              const nextUser = curr.querySelector('div[data-chat-flow-kind="user"], div[class*="userRow"]');
-              if (nextUser) {
-                const nextAnchor = nextUser.closest('[data-chat-anchor-key]') || nextUser;
-                const nextKey = nextAnchor.getAttribute('data-chat-anchor-key') || '';
-                if (!revertedKeys.includes(nextKey)) {
-                  break;
-                }
-              }
-            }
-            curr = curr.nextElementSibling;
-          }
-        }
+      if (!activeRevertedTurns.length) return;
+
+      activeRevertedTurns.forEach(turnNum => {
+        const nodes = document.querySelectorAll(`[data-chat-turn="${turnNum}"]`);
+        nodes.forEach(node => {
+          node.setAttribute('data-dsh-reverted', 'true');
+        });
       });
     }
 
@@ -274,8 +262,8 @@ window.__ModuleLoader__.load({
       const [modalState, setModalState] = useState({
         open: false,
         initialText: "",
+        targetTurn: null,
         targetSeq: null,
-        targetAnchorKey: "",
         hasCodeChanges: false,
         loading: false
       });
@@ -285,9 +273,9 @@ window.__ModuleLoader__.load({
         setModalState((s) => ({ ...s, loading: true }));
         try {
           const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
+          const targetTurn = modalState.targetTurn;
           const targetSeq = modalState.targetSeq;
           const promptText = modalState.initialText;
-          const anchorKey = modalState.targetAnchorKey;
 
           // 1. 调用后端 RPC 进行快照与外部文件恢复
           await fetch("/dsh-revert/rpc", {
@@ -299,20 +287,15 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 存入 localStorage（仅存唯一的 UUID anchorKey，绝不存 text）
-          if (anchorKey) {
-            saveRevertedKey(anchorKey);
+          // 2. 存入 localStorage（仅存 sessionId 与 turn 序号）
+          if (targetTurn !== null && targetTurn !== undefined) {
+            saveRevertedTurn(sessionId, targetTurn);
           }
 
-          // 3. 立即将当前该轮及当下已有的兄弟节点标记隐藏
-          const targetEl = document.querySelector('.dsh-pending-revert');
-          if (targetEl) {
-            targetEl.classList.remove('dsh-pending-revert');
-            let curr = targetEl;
-            while (curr) {
-              curr.setAttribute('data-dsh-reverted', 'true');
-              curr = curr.nextElementSibling;
-            }
+          // 3. 仅精准隐藏当前 targetTurn 的所有节点
+          if (targetTurn !== null && targetTurn !== undefined) {
+            const nodes = document.querySelectorAll(`[data-chat-turn="${targetTurn}"]`);
+            nodes.forEach(n => n.setAttribute('data-dsh-reverted', 'true'));
           }
 
           // 4. 精确回填单份 Prompt 到输入框
@@ -320,7 +303,7 @@ window.__ModuleLoader__.load({
             fillComposerText(promptText);
           }, 60);
 
-          setModalState({ open: false, initialText: "", targetSeq: null, targetAnchorKey: "", hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetTurn: null, targetSeq: null, hasCodeChanges: false, loading: false });
         } catch (err) {
           alert("撤销失败: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
@@ -332,8 +315,7 @@ window.__ModuleLoader__.load({
         hasCodeChanges: modalState.hasCodeChanges,
         loading: modalState.loading,
         onClose: () => {
-          document.querySelectorAll('.dsh-pending-revert').forEach(el => el.classList.remove('dsh-pending-revert'));
-          setModalState({ open: false, initialText: "", targetSeq: null, targetAnchorKey: "", hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetTurn: null, targetSeq: null, hasCodeChanges: false, loading: false });
         },
         onConfirm: handleConfirm
       });
@@ -351,8 +333,11 @@ window.__ModuleLoader__.load({
         const bubble = row.querySelector('[class*="bubble"]');
         if (!actionsRow && !bubble) return;
 
-        // 获取该节点的 seq, anchorKey 与最外层 flowItem
+        // 获取该节点的 turn 序号与 seq
         const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
+        const turnAttr = flowItem.getAttribute('data-chat-turn') || row.getAttribute('data-chat-turn');
+        const turn = turnAttr ? Number(turnAttr) : null;
+
         const anchorNode = row.closest('[data-chat-anchor-key]') || row;
         const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
         const match = /^(\d+):/.exec(anchorKey);
@@ -377,18 +362,12 @@ window.__ModuleLoader__.load({
           e.stopPropagation();
           const text = bubble ? bubble.textContent.trim() : '';
 
-          // 标记当前要撤销的目标 flowItem
-          document.querySelectorAll('.dsh-pending-revert').forEach(el => el.classList.remove('dsh-pending-revert'));
-          if (flowItem) {
-            flowItem.classList.add('dsh-pending-revert');
-          }
-
           if (globalSetModalState) {
             globalSetModalState({
               open: true,
               initialText: text,
+              targetTurn: turn,
               targetSeq: seq,
-              targetAnchorKey: anchorKey,
               hasCodeChanges: false,
               loading: false
             });
