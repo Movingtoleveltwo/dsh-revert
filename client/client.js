@@ -40,6 +40,9 @@ window.__ModuleLoader__.load({
           background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
           color: var(--dsw-alias-label-secondary, #cdd6f4);
         }
+        [data-dsh-revert-hidden="true"] {
+          display: none !important;
+        }
       `;
       document.head.appendChild(style);
     }
@@ -213,7 +216,15 @@ window.__ModuleLoader__.load({
     }
 
     function GlobalRevertPortal() {
-      const [modalState, setModalState] = useState({ open: false, initialText: "", targetSeq: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
+      const [modalState, setModalState] = useState({
+        open: false,
+        initialText: "",
+        targetSeq: null,
+        targetTurn: null,
+        targetFlowItem: null,
+        hasCodeChanges: false,
+        loading: false
+      });
       globalSetModalState = setModalState;
 
       const handleConfirm = async () => {
@@ -221,6 +232,7 @@ window.__ModuleLoader__.load({
         try {
           const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
           const targetSeq = modalState.targetSeq;
+          const targetTurn = modalState.targetTurn;
           const promptText = modalState.initialText;
           const flowItem = modalState.targetFlowItem;
 
@@ -234,18 +246,20 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 彻底隐藏本轮用户提问气泡及随后的所有 AI 思考与回复气泡
-          if (flowItem) {
-            const container = flowItem.parentElement || document.querySelector('[data-chat-flow]');
-            if (container) {
-              let found = false;
-              for (const child of Array.from(container.children)) {
-                if (child === flowItem || child.contains(flowItem)) {
-                  found = true;
-                }
-                if (found) {
-                  child.style.display = "none";
-                }
+          // 2. 彻底隐藏本轮及之后所有会话气泡与尾巴节点
+          const container = document.querySelector('[data-chat-flow]') || (flowItem ? flowItem.parentElement : null);
+          if (container) {
+            let found = false;
+            for (const child of Array.from(container.children)) {
+              const itemTurn = child.getAttribute('data-chat-turn');
+              const itemTurnNum = itemTurn ? Number(itemTurn) : null;
+
+              if (child === flowItem || child.contains(flowItem) || (targetTurn !== null && itemTurnNum !== null && itemTurnNum >= targetTurn)) {
+                found = true;
+              }
+              if (found) {
+                child.setAttribute('data-dsh-revert-hidden', 'true');
+                child.style.display = "none";
               }
             }
           }
@@ -262,9 +276,7 @@ window.__ModuleLoader__.load({
               if (childId) {
                 await globalCtx.sessions.open(childId);
               }
-            } catch (forkErr) {
-              console.warn("[dsh-revert] fork error:", forkErr);
-            }
+            } catch (forkErr) {}
           }
 
           // 4. 精确回填单份 Prompt 到输入框
@@ -272,7 +284,7 @@ window.__ModuleLoader__.load({
             fillComposerText(promptText);
           }, 80);
 
-          setModalState({ open: false, initialText: "", targetSeq: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetSeq: null, targetTurn: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
         } catch (err) {
           alert("撤销失败: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
@@ -283,7 +295,7 @@ window.__ModuleLoader__.load({
         open: modalState.open,
         hasCodeChanges: modalState.hasCodeChanges,
         loading: modalState.loading,
-        onClose: () => setModalState({ open: false, initialText: "", targetSeq: null, targetFlowItem: null, hasCodeChanges: false, loading: false }),
+        onClose: () => setModalState({ open: false, initialText: "", targetSeq: null, targetTurn: null, targetFlowItem: null, hasCodeChanges: false, loading: false }),
         onConfirm: handleConfirm
       });
     }
@@ -298,12 +310,15 @@ window.__ModuleLoader__.load({
         const bubble = row.querySelector('[class*="bubble"]');
         if (!actionsRow && !bubble) return;
 
-        // 获取该节点的 seq 与最外层 flowItem
+        // 获取该节点的 seq, turn 与最外层 flowItem
         const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
         const anchorNode = row.closest('[data-chat-anchor-key]') || row;
         const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
         const match = /^(\d+):/.exec(anchorKey);
         const seq = match ? Number(match[1]) : null;
+
+        const turnAttr = flowItem.getAttribute('data-chat-turn') || row.getAttribute('data-chat-turn');
+        const turn = turnAttr ? Number(turnAttr) : null;
 
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -328,6 +343,7 @@ window.__ModuleLoader__.load({
               open: true,
               initialText: text,
               targetSeq: seq,
+              targetTurn: turn,
               targetFlowItem: flowItem,
               hasCodeChanges: false,
               loading: false
