@@ -160,7 +160,7 @@ window.__ModuleLoader__.load({
     let globalSetModalState = null;
     let globalCtx = null;
 
-    // 完美兼容 Lexical 富文本编辑器及普通 textarea 的文本回填与聚焦
+    // 清理已有内容并精确写入单份 Prompt 文本
     function fillComposerText(text) {
       if (!text) return;
       const editor = document.querySelector('[contenteditable="true"]') ||
@@ -176,19 +176,30 @@ window.__ModuleLoader__.load({
         else editor.value = text;
         editor.dispatchEvent(new Event("input", { bubbles: true }));
         editor.dispatchEvent(new Event("change", { bubbles: true }));
+        editor.setSelectionRange(text.length, text.length);
       } else {
-        // Lexical / contenteditable 编辑器回填
+        // Lexical / contenteditable：先彻底选区清空
         const selection = window.getSelection();
         const range = document.createRange();
         range.selectNodeContents(editor);
         selection.removeAllRanges();
         selection.addRange(range);
+        document.execCommand("delete", false, null);
 
-        const success = document.execCommand("insertText", false, text);
-        if (!success || editor.textContent.trim() !== text.trim()) {
+        // 插入单份新文本
+        document.execCommand("insertText", false, text);
+
+        if (editor.textContent.trim() !== text.trim()) {
           editor.textContent = text;
           editor.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
         }
+
+        // 光标移至末尾
+        const newRange = document.createRange();
+        newRange.selectNodeContents(editor);
+        newRange.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
       }
     }
 
@@ -204,7 +215,7 @@ window.__ModuleLoader__.load({
           const promptText = modalState.initialText;
           const targetEl = modalState.targetElement;
 
-          // 1. 调用后端 RPC 进行文件恢复
+          // 1. 调用后端 RPC 进行快照与文件恢复
           await fetch("/dsh-revert/rpc", {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -214,13 +225,19 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 隐藏目标气泡之后的所有会话节点 (即时视觉截断)
+          // 2. 彻底隐藏本轮用户提问气泡及之后的所有回答气泡（从视觉上瞬间回退）
           if (targetEl) {
-            let next = targetEl.closest('[data-chat-flow-key]') || targetEl;
-            let current = next ? next.nextElementSibling : null;
-            while (current) {
-              current.style.display = "none";
-              current = current.nextElementSibling;
+            const flowContainer = document.querySelector('[data-chat-flow]') || targetEl.closest('[class*="column"]');
+            if (flowContainer) {
+              let found = false;
+              for (const child of Array.from(flowContainer.children)) {
+                if (child === targetEl || child.contains(targetEl)) {
+                  found = true;
+                }
+                if (found) {
+                  child.style.display = "none";
+                }
+              }
             }
           }
 
@@ -241,10 +258,10 @@ window.__ModuleLoader__.load({
             }
           }
 
-          // 4. 自动回填 Prompt 到输入框
+          // 4. 精确回填单份 Prompt 到输入框
           setTimeout(() => {
             fillComposerText(promptText);
-          }, 100);
+          }, 80);
 
           setModalState({ open: false, initialText: "", targetSeq: null, targetElement: null, hasCodeChanges: false, loading: false });
         } catch (err) {
