@@ -40,8 +40,8 @@ window.__ModuleLoader__.load({
           background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
           color: var(--dsw-alias-label-secondary, #cdd6f4);
         }
-        /* 核心规则：被撤销的 flowItem 以及它后面的所有后续节点，由浏览器 CSS 引擎强力瞬间隐藏 */
-        .dsh-reverted, .dsh-reverted ~ * {
+        /* 只精准隐藏被撤销的特定历史节点，绝不影响后续发送的新消息 */
+        [data-dsh-reverted="true"] {
           display: none !important;
         }
       `;
@@ -243,11 +243,15 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 原地彻底隐藏本轮及之后所有会话节点（激活 .dsh-reverted 样式，CSS 兄弟选择器 0ms 瞬间强力隐藏）
+          // 2. 只精准隐藏当前该轮以及当下的所有后续兄弟节点，绝不使用 ~ * 污染未来发送的新消息
           const targetEl = document.querySelector('.dsh-pending-revert');
           if (targetEl) {
             targetEl.classList.remove('dsh-pending-revert');
-            targetEl.classList.add('dsh-reverted');
+            let curr = targetEl;
+            while (curr) {
+              curr.setAttribute('data-dsh-reverted', 'true');
+              curr = curr.nextElementSibling;
+            }
           }
 
           // 3. 精确回填单份 Prompt 到输入框
