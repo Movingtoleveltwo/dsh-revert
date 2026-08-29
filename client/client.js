@@ -6,29 +6,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, createElement: h } = React;
 
     const name = "dsh-revert";
-    const inject = ["slots", "locale", "connection", "sessions", "uiConversation", "uiSession"];
-
-    const STORAGE_KEY = "dsh_reverted_turns_v3";
-
-    function getRevertedEntries() {
-      try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-      } catch (e) {
-        return [];
-      }
-    }
-
-    function saveRevertedTurn(sessionId, turn) {
-      if (turn === null || turn === undefined) return;
-      try {
-        const list = getRevertedEntries();
-        const exists = list.some(item => item.sessionId === sessionId && item.turn === turn);
-        if (!exists) {
-          list.push({ sessionId, turn, time: Date.now() });
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-        }
-      } catch (e) {}
-    }
+    const inject = ["slots", "locale", "connection", "sessions", "uiConversation", "uiSession", "uiWorkspace"];
 
     // 样式注入：1:1 复刻 Antigravity 确认撤销弹窗与图标
     function injectStyles() {
@@ -61,10 +39,6 @@ window.__ModuleLoader__.load({
         .dsh-revert-icon-btn:hover {
           background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
           color: var(--dsw-alias-label-secondary, #cdd6f4);
-        }
-        /* 仅对打上被撤销标记的特定历史节点进行隐藏 */
-        [data-dsh-reverted="true"] {
-          display: none !important;
         }
       `;
       document.head.appendChild(style);
@@ -238,32 +212,13 @@ window.__ModuleLoader__.load({
       document.execCommand("insertText", false, text);
     }
 
-    // 按回合索引进行原子级隔离，只隐藏被撤销的 turn，绝不误伤后续任何回合
-    function applySavedRevertStates() {
-      const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
-      const revertedEntries = getRevertedEntries();
-      if (!revertedEntries.length) return;
-
-      const activeRevertedTurns = revertedEntries
-        .filter(item => !sessionId || item.sessionId === sessionId)
-        .map(item => item.turn);
-
-      if (!activeRevertedTurns.length) return;
-
-      activeRevertedTurns.forEach(turnNum => {
-        const nodes = document.querySelectorAll(`[data-chat-turn="${turnNum}"]`);
-        nodes.forEach(node => {
-          node.setAttribute('data-dsh-reverted', 'true');
-        });
-      });
-    }
-
     function GlobalRevertPortal() {
       const [modalState, setModalState] = useState({
         open: false,
         initialText: "",
         targetTurn: null,
         targetSeq: null,
+        prevTurnTailBtn: null,
         hasCodeChanges: false,
         loading: false
       });
@@ -276,8 +231,9 @@ window.__ModuleLoader__.load({
           const targetTurn = modalState.targetTurn;
           const targetSeq = modalState.targetSeq;
           const promptText = modalState.initialText;
+          const prevTurnTailBtn = modalState.prevTurnTailBtn;
 
-          // 1. 调用后端 RPC 进行快照与外部文件恢复
+          // 1. 调用后端 RPC 进行文件快照恢复
           await fetch("/dsh-revert/rpc", {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -287,23 +243,26 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 存入 localStorage（仅存 sessionId 与 turn 序号）
-          if (targetTurn !== null && targetTurn !== undefined) {
-            saveRevertedTurn(sessionId, targetTurn);
+          // 2. 真正的底层会话上下文回滚：
+          // 如果撤销的是第 1 轮（整个会话的起点），直接平滑重置为纯净会话
+          if (targetTurn === 1 || !targetTurn) {
+            const brandBtn = document.querySelector('button[class*="brand"], button[aria-label*="新建会话"]');
+            if (brandBtn) {
+              brandBtn.click();
+            } else if (globalCtx?.uiWorkspace && typeof globalCtx.uiWorkspace.startSession === 'function') {
+              globalCtx.uiWorkspace.startSession();
+            }
+          } else if (prevTurnTailBtn) {
+            // 如果是多轮会话撤销中间轮次，触发上一轮的分支切流
+            prevTurnTailBtn.click();
           }
 
-          // 3. 仅精准隐藏当前 targetTurn 的所有节点
-          if (targetTurn !== null && targetTurn !== undefined) {
-            const nodes = document.querySelectorAll(`[data-chat-turn="${targetTurn}"]`);
-            nodes.forEach(n => n.setAttribute('data-dsh-reverted', 'true'));
-          }
-
-          // 4. 精确回填单份 Prompt 到输入框
+          // 3. 将 Prompt 回填到输入框
           setTimeout(() => {
             fillComposerText(promptText);
-          }, 60);
+          }, 350);
 
-          setModalState({ open: false, initialText: "", targetTurn: null, targetSeq: null, hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetTurn: null, targetSeq: null, prevTurnTailBtn: null, hasCodeChanges: false, loading: false });
         } catch (err) {
           alert("撤销失败: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
@@ -315,7 +274,7 @@ window.__ModuleLoader__.load({
         hasCodeChanges: modalState.hasCodeChanges,
         loading: modalState.loading,
         onClose: () => {
-          setModalState({ open: false, initialText: "", targetTurn: null, targetSeq: null, hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetTurn: null, targetSeq: null, prevTurnTailBtn: null, hasCodeChanges: false, loading: false });
         },
         onConfirm: handleConfirm
       });
@@ -323,8 +282,6 @@ window.__ModuleLoader__.load({
 
     // 在用户消息气泡下方的动作栏（时间与复制图标旁）挂载 ↩ 按钮
     function attachUserRevertIcons() {
-      applySavedRevertStates();
-
       const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[class*="userRow"]');
       userRows.forEach((row) => {
         if (row.querySelector('.dsh-revert-icon-btn')) return;
@@ -342,6 +299,15 @@ window.__ModuleLoader__.load({
         const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
         const match = /^(\d+):/.exec(anchorKey);
         const seq = match ? Number(match[1]) : null;
+
+        // 寻找上一轮的 branch 分支按钮（如果存在）
+        let prevTurnTailBtn = null;
+        if (turn && turn > 1) {
+          const prevTail = document.querySelector(`[data-turn-tail="${turn - 1}"], [data-chat-turn="${turn - 1}"][data-chat-flow-kind="turn-tail"]`);
+          if (prevTail) {
+            prevTurnTailBtn = prevTail.querySelector('button[aria-label*="分支"], button[title*="分支"], button:has(svg[viewBox*="16"])');
+          }
+        }
 
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -368,6 +334,7 @@ window.__ModuleLoader__.load({
               initialText: text,
               targetTurn: turn,
               targetSeq: seq,
+              prevTurnTailBtn,
               hasCodeChanges: false,
               loading: false
             });
