@@ -244,36 +244,26 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 如果是第 1 轮撤销，直接平滑重置为纯净会话
-          if (targetTurn === 1 || !targetTurn) {
-            const brandBtn = document.querySelector('button[class*="brand"], button[aria-label*="新建会话"]');
-            if (brandBtn) {
-              brandBtn.click();
-            } else if (globalCtx?.uiWorkspace && typeof globalCtx.uiWorkspace.startSession === 'function') {
-              globalCtx.uiWorkspace.startSession();
-            }
-          } else {
-            // 如果是第 2 轮及后续轮次，在 DOM 视图中彻底隐藏当前 targetTurn 及所有后续兄弟节点
-            const container = document.querySelector('[data-chat-flow]');
-            if (container) {
-              let found = false;
-              for (const child of Array.from(container.children)) {
-                const childTurn = child.getAttribute('data-chat-turn');
-                if (child === flowItem || child.contains(flowItem) || (targetTurn && childTurn && Number(childTurn) >= targetTurn)) {
-                  found = true;
-                }
-                if (found) {
-                  child.style.setProperty('display', 'none', 'important');
-                  child.setAttribute('data-dsh-reverted', 'true');
-                }
+          // 2. 原地无感撤销：在当前会话视图中隐藏该轮及之后的所有元素，绝不跳出到新建欢迎页！
+          const container = document.querySelector('[data-chat-flow]');
+          if (container && flowItem) {
+            let found = false;
+            for (const child of Array.from(container.children)) {
+              const childTurn = child.getAttribute('data-chat-turn');
+              if (child === flowItem || child.contains(flowItem) || (targetTurn && childTurn && Number(childTurn) >= targetTurn)) {
+                found = true;
+              }
+              if (found) {
+                child.style.setProperty('display', 'none', 'important');
+                child.setAttribute('data-dsh-reverted', 'true');
               }
             }
           }
 
-          // 3. 将 Prompt 精准回填到输入框
+          // 3. 将 Prompt 精准回填到当前同一窗口的输入框
           setTimeout(() => {
             fillComposerText(promptText);
-          }, 300);
+          }, 60);
 
           setModalState({ open: false, initialText: "", targetTurn: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
         } catch (err) {
