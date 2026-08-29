@@ -8,46 +8,43 @@ window.__ModuleLoader__.load({
     const name = "dsh-revert";
     const inject = ["slots", "locale", "connection"];
 
-    // 样式注入：Codex 风格的用户气泡悬浮编辑按钮与弹窗
-    function injectCodexStyles() {
-      if (document.getElementById("dsh-revert-codex-style")) return;
+    // 样式注入：1:1 像素级复刻 DSH 原生动作按钮与 Codex 弹窗
+    function injectStyles() {
+      if (document.getElementById("dsh-revert-native-style")) return;
       const style = document.createElement("style");
-      style.id = "dsh-revert-codex-style";
+      style.id = "dsh-revert-native-style";
       style.textContent = `
-        .dsh-user-revert-btn {
-          opacity: 0;
-          transition: opacity 0.15s ease, transform 0.15s ease;
-          cursor: pointer;
-          background: rgba(40, 44, 52, 0.85);
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          border-radius: 6px;
-          padding: 2px 8px;
-          color: #cdd6f4;
-          font-size: 12px;
+        .dsh-revert-icon-btn {
           display: inline-flex;
           align-items: center;
-          gap: 4px;
-          backdrop-filter: blur(4px);
+          justify-content: center;
+          width: calc(28px + var(--dsh-content-font-delta, 0px));
+          height: calc(28px + var(--dsh-content-font-delta, 0px));
+          padding: 6px;
+          border: none;
+          border-radius: 28px;
+          background: transparent;
+          color: var(--dsw-alias-label-tertiary, #9399b2);
+          cursor: pointer;
+          transition: background 0.15s ease, color 0.15s ease;
           user-select: none;
-          margin-right: 6px;
+          box-sizing: border-box;
         }
-        .dsh-user-revert-btn:hover {
-          opacity: 1 !important;
-          background: rgba(59, 130, 246, 0.9);
-          border-color: rgba(96, 165, 250, 0.8);
-          color: #fff;
-          transform: scale(1.04);
+        .dsh-revert-icon-btn svg {
+          width: calc(16px + var(--dsh-content-font-delta, 0px));
+          height: calc(16px + var(--dsh-content-font-delta, 0px));
+          stroke: currentColor;
+          fill: none;
         }
-        /* 鼠标悬浮在你自己发送的消息气泡行时自动浮现编辑按钮 (Codex 体验) */
-        div[data-chat-flow-kind="user"]:hover .dsh-user-revert-btn,
-        div[data-time-hover-root]:hover .dsh-user-revert-btn,
-        div[class*="userRow"]:hover .dsh-user-revert-btn {
-          opacity: 0.85;
+        .dsh-revert-icon-btn:hover {
+          background: var(--dsw-alias-interactive-bg-hover, rgba(255, 255, 255, 0.08));
+          color: var(--dsw-alias-label-secondary, #cdd6f4);
         }
       `;
       document.head.appendChild(style);
     }
 
+    // 弹窗组件
     function RevertModal({ open, onClose, onConfirm, initialText, loading }) {
       if (!open) return null;
       const [promptText, setPromptText] = useState(initialText || "");
@@ -73,8 +70,8 @@ window.__ModuleLoader__.load({
         }
       }, h("div", {
         style: {
-          background: "#181825",
-          color: "#cdd6f4",
+          background: "var(--dsh-bg-card, #181825)",
+          color: "var(--dsh-fg, #cdd6f4)",
           borderRadius: "14px",
           border: "1px solid rgba(255, 255, 255, 0.12)",
           padding: "22px",
@@ -92,7 +89,7 @@ window.__ModuleLoader__.load({
           style: { display: "flex", justifyContent: "space-between", alignItems: "center" }
         }, [
           h("h3", { key: "title", style: { margin: 0, fontSize: "16px", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" } }, [
-            h("span", { key: "icon" }, "✏️"),
+            h("span", { key: "icon" }, "↩️"),
             h("span", { key: "text" }, "编辑 Prompt 并重新生成 (Revert)")
           ]),
           h("button", {
@@ -104,7 +101,7 @@ window.__ModuleLoader__.load({
         h("p", {
           key: "desc",
           style: { margin: 0, fontSize: "13px", opacity: 0.8, lineHeight: 1.5 }
-        }, "系统将截断后续生成记录，回到该轮对话状态。你可以直接微调 Prompt："),
+        }, "系统将截断后续生成记录，回到该轮对话状态。你可以在下方直接修改 Prompt："),
         h("textarea", {
           key: "textarea",
           value: promptText,
@@ -114,7 +111,7 @@ window.__ModuleLoader__.load({
           style: {
             width: "100%",
             boxSizing: "border-box",
-            background: "#11111b",
+            background: "rgba(0, 0, 0, 0.35)",
             border: "1px solid rgba(255, 255, 255, 0.18)",
             borderRadius: "8px",
             color: "#fff",
@@ -216,21 +213,31 @@ window.__ModuleLoader__.load({
       });
     }
 
-    // 在你自己发送的用户气泡旁边挂载 Codex 风格编辑按钮
-    function attachCodexUserBubbleButtons() {
-      const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[data-time-hover-root], div[class*="userRow"]');
+    // 1:1 图2 效果：在用户气泡下方的动作栏（时间与复制图标旁）添加纯图标 ↩ 按钮
+    function attachUserRevertIcons() {
+      // 找到所有用户消息容器
+      const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[class*="userRow"]');
       userRows.forEach((row) => {
-        if (row.querySelector('.dsh-user-revert-btn')) return;
+        if (row.querySelector('.dsh-revert-icon-btn')) return;
 
-        const bubble = row.querySelector('[class*="bubble"]');
+        // 查找动作栏 (actions)
         const actionsRow = row.querySelector('[class*="actions"]');
-        if (!bubble && !actionsRow) return;
+        const bubble = row.querySelector('[class*="bubble"]');
+        if (!actionsRow && !bubble) return;
 
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'dsh-user-revert-btn';
-        btn.title = '编辑此轮 Prompt 并重新生成 (Codex 风格)';
-        btn.innerHTML = '<span>✏️</span><span>编辑重试</span>';
+        btn.className = 'dsh-revert-icon-btn';
+        btn.setAttribute('aria-label', '还原此轮 Prompt');
+        btn.title = '还原到此轮并重新生成 (Revert)';
+
+        // 1:1 图2 弧形回退箭头 SVG
+        btn.innerHTML = `
+          <svg viewBox="0 0 16 16" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5.5 3.5L2 7L5.5 10.5"/>
+            <path d="M2.5 7H9C11.5 7 13.5 9 13.5 11.5V12.5"/>
+          </svg>
+        `;
 
         btn.onclick = (e) => {
           e.preventDefault();
@@ -242,15 +249,19 @@ window.__ModuleLoader__.load({
         };
 
         if (actionsRow) {
-          actionsRow.insertBefore(btn, actionsRow.firstChild);
-        } else if (bubble) {
-          bubble.parentElement.appendChild(btn);
+          // 放在复制按钮旁边（如图2所示）
+          const copyBtn = actionsRow.querySelector('button');
+          if (copyBtn && copyBtn.nextSibling) {
+            actionsRow.insertBefore(btn, copyBtn.nextSibling);
+          } else {
+            actionsRow.appendChild(btn);
+          }
         }
       });
     }
 
     function apply(ctx) {
-      injectCodexStyles();
+      injectStyles();
 
       // 挂载全局弹窗容器
       let portalDiv = document.getElementById("dsh-revert-portal-root");
@@ -268,17 +279,15 @@ window.__ModuleLoader__.load({
           } else if (typeof ReactDOM.render === "function") {
             ReactDOM.render(h(GlobalRevertPortal), portalDiv);
           }
-        } catch (e) {
-          console.warn("[dsh-revert] portal mount error:", e);
-        }
+        } catch (e) {}
       }
 
-      // 启动 DOM 监听，动态为你发出的每一条用户消息气泡挂载编辑按钮
+      // 监听 DOM 树变化，实时挂载图2风格的回退图标
       const observer = new MutationObserver(() => {
-        attachCodexUserBubbleButtons();
+        attachUserRevertIcons();
       });
       observer.observe(document.body, { childList: true, subtree: true });
-      setTimeout(attachCodexUserBubbleButtons, 500);
+      setTimeout(attachUserRevertIcons, 500);
     }
 
     return { name, inject, apply };
