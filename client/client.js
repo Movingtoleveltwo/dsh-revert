@@ -8,6 +8,24 @@ window.__ModuleLoader__.load({
     const name = "dsh-revert";
     const inject = ["slots", "locale", "connection", "sessions", "uiConversation", "uiSession"];
 
+    const STORAGE_KEY = "dsh_reverted_history_v1";
+
+    function getRevertedList() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveRevertedEntry(entry) {
+      try {
+        const list = getRevertedList();
+        list.push(entry);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      } catch (e) {}
+    }
+
     // 样式注入：1:1 复刻 Antigravity 确认撤销弹窗与图标
     function injectStyles() {
       if (document.getElementById("dsh-revert-agy-style")) return;
@@ -216,11 +234,54 @@ window.__ModuleLoader__.load({
       document.execCommand("insertText", false, text);
     }
 
+    function applySavedRevertStates() {
+      const revertedList = getRevertedList();
+      if (!revertedList.length) return;
+
+      const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[class*="userRow"]');
+      userRows.forEach((row) => {
+        const bubble = row.querySelector('[class*="bubble"]');
+        const text = bubble ? bubble.textContent.trim() : row.textContent.trim();
+        const anchorNode = row.closest('[data-chat-anchor-key]') || row;
+        const anchorKey = anchorNode.getAttribute('data-chat-anchor-key') || '';
+
+        const matched = revertedList.some(item => 
+          (item.anchorKey && item.anchorKey === anchorKey) ||
+          (item.text && item.text === text)
+        );
+
+        if (matched) {
+          const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
+          let curr = flowItem;
+          while (curr) {
+            curr.setAttribute('data-dsh-reverted', 'true');
+            // 如果遇到下一个没被撤销的用户气泡，则截断
+            if (curr !== flowItem) {
+              const nextUser = curr.querySelector('div[data-chat-flow-kind="user"], div[class*="userRow"]');
+              if (nextUser) {
+                const nextBubble = nextUser.querySelector('[class*="bubble"]');
+                const nextText = nextBubble ? nextBubble.textContent.trim() : nextUser.textContent.trim();
+                const nextAnchor = nextUser.closest('[data-chat-anchor-key]') || nextUser;
+                const nextKey = nextAnchor.getAttribute('data-chat-anchor-key') || '';
+                const nextIsReverted = revertedList.some(item => 
+                  (item.anchorKey && item.anchorKey === nextKey) ||
+                  (item.text && item.text === nextText)
+                );
+                if (!nextIsReverted) break;
+              }
+            }
+            curr = curr.nextElementSibling;
+          }
+        }
+      });
+    }
+
     function GlobalRevertPortal() {
       const [modalState, setModalState] = useState({
         open: false,
         initialText: "",
         targetSeq: null,
+        targetAnchorKey: "",
         hasCodeChanges: false,
         loading: false
       });
@@ -232,6 +293,7 @@ window.__ModuleLoader__.load({
           const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
           const targetSeq = modalState.targetSeq;
           const promptText = modalState.initialText;
+          const anchorKey = modalState.targetAnchorKey;
 
           // 1. 调用后端 RPC 进行快照与外部文件恢复
           await fetch("/dsh-revert/rpc", {
@@ -243,7 +305,15 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 只精准隐藏当前该轮以及当下的所有后续兄弟节点，绝不使用 ~ * 污染未来发送的新消息
+          // 2. 存入 localStorage 持久化，确保 F5 刷新后依然保持干净
+          saveRevertedEntry({
+            sessionId,
+            text: promptText,
+            anchorKey,
+            time: Date.now()
+          });
+
+          // 3. 立即将当前该轮及所有兄弟节点标记隐藏
           const targetEl = document.querySelector('.dsh-pending-revert');
           if (targetEl) {
             targetEl.classList.remove('dsh-pending-revert');
@@ -254,12 +324,12 @@ window.__ModuleLoader__.load({
             }
           }
 
-          // 3. 精确回填单份 Prompt 到输入框
+          // 4. 精确回填单份 Prompt 到输入框
           setTimeout(() => {
             fillComposerText(promptText);
           }, 60);
 
-          setModalState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetSeq: null, targetAnchorKey: "", hasCodeChanges: false, loading: false });
         } catch (err) {
           alert("撤销失败: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
@@ -272,7 +342,7 @@ window.__ModuleLoader__.load({
         loading: modalState.loading,
         onClose: () => {
           document.querySelectorAll('.dsh-pending-revert').forEach(el => el.classList.remove('dsh-pending-revert'));
-          setModalState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetSeq: null, targetAnchorKey: "", hasCodeChanges: false, loading: false });
         },
         onConfirm: handleConfirm
       });
@@ -280,6 +350,8 @@ window.__ModuleLoader__.load({
 
     // 在用户消息气泡下方的动作栏（时间与复制图标旁）挂载 ↩ 按钮
     function attachUserRevertIcons() {
+      applySavedRevertStates();
+
       const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[class*="userRow"]');
       userRows.forEach((row) => {
         if (row.querySelector('.dsh-revert-icon-btn')) return;
@@ -325,6 +397,7 @@ window.__ModuleLoader__.load({
               open: true,
               initialText: text,
               targetSeq: seq,
+              targetAnchorKey: anchorKey,
               hasCodeChanges: false,
               loading: false
             });
