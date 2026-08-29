@@ -8,11 +8,11 @@ window.__ModuleLoader__.load({
     const name = "dsh-revert";
     const inject = ["slots", "locale", "connection"];
 
-    // 样式注入：1:1 像素级复刻 DSH 原生动作按钮与 Codex 弹窗
+    // 样式注入：1:1 复刻 Antigravity Confirm Undo 弹窗与图标
     function injectStyles() {
-      if (document.getElementById("dsh-revert-native-style")) return;
+      if (document.getElementById("dsh-revert-agy-style")) return;
       const style = document.createElement("style");
-      style.id = "dsh-revert-native-style";
+      style.id = "dsh-revert-agy-style";
       style.textContent = `
         .dsh-revert-icon-btn {
           display: inline-flex;
@@ -44,15 +44,24 @@ window.__ModuleLoader__.load({
       document.head.appendChild(style);
     }
 
-    // 弹窗组件
-    function RevertModal({ open, onClose, onConfirm, initialText, loading }) {
+    // 1:1 Antigravity Confirm Undo 对话框
+    function AntigravityConfirmUndoModal({ open, onClose, onConfirm, hasCodeChanges, loading }) {
       if (!open) return null;
-      const [promptText, setPromptText] = useState(initialText || "");
-      const [restoreFiles, setRestoreFiles] = useState(true);
 
+      // 键盘快捷键监听：Enter 确认，Escape 取消
       useEffect(() => {
-        setPromptText(initialText || "");
-      }, [initialText]);
+        const handleKeyDown = (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onConfirm();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+          }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+      }, [onConfirm, onClose]);
 
       return h("div", {
         style: {
@@ -61,26 +70,26 @@ window.__ModuleLoader__.load({
           left: 0,
           right: 0,
           bottom: 0,
-          background: "rgba(0, 0, 0, 0.65)",
+          background: "rgba(0, 0, 0, 0.6)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           zIndex: 999999,
-          backdropFilter: "blur(6px)",
+          backdropFilter: "blur(4px)",
         }
       }, h("div", {
         style: {
-          background: "var(--dsh-bg-card, #181825)",
-          color: "var(--dsh-fg, #cdd6f4)",
-          borderRadius: "14px",
-          border: "1px solid rgba(255, 255, 255, 0.12)",
-          padding: "22px",
-          maxWidth: "520px",
-          width: "92%",
-          boxShadow: "0 24px 48px rgba(0,0,0,0.6)",
+          background: "#16161a",
+          color: "#e2e8f0",
+          borderRadius: "10px",
+          border: "1px solid rgba(255, 255, 255, 0.1)",
+          padding: "20px 24px",
+          maxWidth: "440px",
+          width: "90%",
+          boxShadow: "0 20px 40px rgba(0, 0, 0, 0.7)",
           display: "flex",
           flexDirection: "column",
-          gap: "14px",
+          gap: "16px",
           fontFamily: "system-ui, -apple-system, sans-serif"
         }
       }, [
@@ -88,86 +97,63 @@ window.__ModuleLoader__.load({
           key: "header",
           style: { display: "flex", justifyContent: "space-between", alignItems: "center" }
         }, [
-          h("h3", { key: "title", style: { margin: 0, fontSize: "16px", fontWeight: "600", display: "flex", alignItems: "center", gap: "6px" } }, [
-            h("span", { key: "icon" }, "↩️"),
-            h("span", { key: "text" }, "编辑 Prompt 并重新生成 (Revert)")
-          ]),
+          h("h3", {
+            key: "title",
+            style: { margin: 0, fontSize: "16px", fontWeight: "600", color: "#f8fafc" }
+          }, "Confirm Undo"),
           h("button", {
             key: "close",
             onClick: onClose,
-            style: { background: "none", border: "none", color: "inherit", cursor: "pointer", fontSize: "18px", opacity: 0.7 }
+            style: { background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "16px", padding: 0 }
           }, "✕")
         ]),
         h("p", {
           key: "desc",
-          style: { margin: 0, fontSize: "13px", opacity: 0.8, lineHeight: 1.5 }
-        }, "系统将截断后续生成记录，回到该轮对话状态。你可以在下方直接修改 Prompt："),
-        h("textarea", {
-          key: "textarea",
-          value: promptText,
-          onChange: (e) => setPromptText(e.target.value),
-          placeholder: "在此修改该轮的 Prompt...",
-          rows: 5,
-          style: {
-            width: "100%",
-            boxSizing: "border-box",
-            background: "rgba(0, 0, 0, 0.35)",
-            border: "1px solid rgba(255, 255, 255, 0.18)",
-            borderRadius: "8px",
-            color: "#fff",
-            padding: "12px",
-            fontSize: "14px",
-            lineHeight: 1.5,
-            resize: "vertical",
-            outline: "none"
-          }
-        }),
-        h("label", {
-          key: "restore",
-          style: { display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer", userSelect: "none" }
-        }, [
-          h("input", {
-            key: "cb",
-            type: "checkbox",
-            checked: restoreFiles,
-            onChange: (e) => setRestoreFiles(e.target.checked)
-          }),
-          h("span", { key: "txt" }, "同步恢复代码文件（工作区 + 外部文件）至本轮快照")
-        ]),
+          style: { margin: 0, fontSize: "14px", color: "#94a3b8", lineHeight: 1.5 }
+        }, hasCodeChanges
+          ? "This undo action will revert all code changes made in this turn."
+          : "This undo action will not make any code changes."
+        ),
         h("div", {
           key: "actions",
-          style: { display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }
+          style: { display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "14px", marginTop: "4px" }
         }, [
           h("button", {
             key: "cancel",
             onClick: onClose,
             disabled: loading,
             style: {
-              padding: "8px 16px",
-              borderRadius: "8px",
-              border: "1px solid rgba(255, 255, 255, 0.2)",
-              background: "transparent",
-              color: "inherit",
-              cursor: "pointer",
-              fontSize: "13px"
-            }
-          }, "取消"),
-          h("button", {
-            key: "submit",
-            disabled: loading,
-            onClick: () => onConfirm({ prompt: promptText, restoreFiles }),
-            style: {
-              padding: "8px 18px",
-              borderRadius: "8px",
+              background: "none",
               border: "none",
-              background: "#3b82f6",
-              color: "#fff",
+              color: "#cbd5e1",
+              cursor: "pointer",
+              fontSize: "14px",
+              fontWeight: "500",
+              padding: "6px 10px"
+            }
+          }, "Cancel"),
+          h("button", {
+            key: "confirm",
+            disabled: loading,
+            onClick: onConfirm,
+            style: {
+              padding: "7px 16px",
+              borderRadius: "6px",
+              border: "none",
+              background: "#0284c7",
+              color: "#ffffff",
               fontWeight: "600",
               cursor: loading ? "not-allowed" : "pointer",
-              fontSize: "13px",
-              boxShadow: "0 2px 8px rgba(59, 130, 246, 0.4)"
+              fontSize: "14px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+              boxShadow: "0 2px 6px rgba(2, 132, 199, 0.35)"
             }
-          }, loading ? "处理中..." : "确认并重新生成")
+          }, [
+            h("span", { key: "txt" }, loading ? "Reverting..." : "Confirm"),
+            h("span", { key: "enter", style: { opacity: 0.7, fontSize: "12px" } }, "↵")
+          ])
         ])
       ]));
     }
@@ -175,10 +161,10 @@ window.__ModuleLoader__.load({
     let globalSetModalState = null;
 
     function GlobalRevertPortal() {
-      const [modalState, setModalState] = useState({ open: false, initialText: "", loading: false });
+      const [modalState, setModalState] = useState({ open: false, initialText: "", hasCodeChanges: false, loading: false });
       globalSetModalState = setModalState;
 
-      const handleConfirm = async ({ prompt, restoreFiles }) => {
+      const handleConfirm = async () => {
         setModalState((s) => ({ ...s, loading: true }));
         try {
           await fetch("/dsh-revert/rpc", {
@@ -186,41 +172,40 @@ window.__ModuleLoader__.load({
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               action: "revert",
-              payload: { restoreFiles }
+              payload: { restoreFiles: true }
             })
           }).catch(() => {});
 
+          // 将 Prompt 自动回填到底部主输入框并获得焦点
           const composer = document.querySelector("textarea");
-          if (composer && prompt) {
-            composer.value = prompt;
+          if (composer && modalState.initialText) {
+            composer.value = modalState.initialText;
             composer.dispatchEvent(new Event("input", { bubbles: true }));
             composer.focus();
           }
 
-          setModalState({ open: false, initialText: "", loading: false });
+          setModalState({ open: false, initialText: "", hasCodeChanges: false, loading: false });
         } catch (err) {
-          alert("还原失败: " + err.message);
+          alert("Undo failed: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
         }
       };
 
-      return h(RevertModal, {
+      return h(AntigravityConfirmUndoModal, {
         open: modalState.open,
-        initialText: modalState.initialText,
+        hasCodeChanges: modalState.hasCodeChanges,
         loading: modalState.loading,
-        onClose: () => setModalState({ open: false, initialText: "", loading: false }),
+        onClose: () => setModalState({ open: false, initialText: "", hasCodeChanges: false, loading: false }),
         onConfirm: handleConfirm
       });
     }
 
-    // 1:1 图2 效果：在用户气泡下方的动作栏（时间与复制图标旁）添加纯图标 ↩ 按钮
+    // 1:1 在用户消息气泡下方的动作栏（时间与复制图标旁）添加纯图标 ↩ 按钮
     function attachUserRevertIcons() {
-      // 找到所有用户消息容器
       const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[class*="userRow"]');
       userRows.forEach((row) => {
         if (row.querySelector('.dsh-revert-icon-btn')) return;
 
-        // 查找动作栏 (actions)
         const actionsRow = row.querySelector('[class*="actions"]');
         const bubble = row.querySelector('[class*="bubble"]');
         if (!actionsRow && !bubble) return;
@@ -228,10 +213,10 @@ window.__ModuleLoader__.load({
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'dsh-revert-icon-btn';
-        btn.setAttribute('aria-label', '还原此轮 Prompt');
-        btn.title = '还原到此轮并重新生成 (Revert)';
+        btn.setAttribute('aria-label', 'Undo to this message');
+        btn.title = 'Undo / Revert (Confirm Undo)';
 
-        // 1:1 图2 弧形回退箭头 SVG
+        // 1:1 弧形回退箭头 SVG
         btn.innerHTML = `
           <svg viewBox="0 0 16 16" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
             <path d="M5.5 3.5L2 7L5.5 10.5"/>
@@ -244,12 +229,11 @@ window.__ModuleLoader__.load({
           e.stopPropagation();
           const text = bubble ? bubble.textContent.trim() : '';
           if (globalSetModalState) {
-            globalSetModalState({ open: true, initialText: text, loading: false });
+            globalSetModalState({ open: true, initialText: text, hasCodeChanges: false, loading: false });
           }
         };
 
         if (actionsRow) {
-          // 放在复制按钮旁边（如图2所示）
           const copyBtn = actionsRow.querySelector('button');
           if (copyBtn && copyBtn.nextSibling) {
             actionsRow.insertBefore(btn, copyBtn.nextSibling);
@@ -263,7 +247,6 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       injectStyles();
 
-      // 挂载全局弹窗容器
       let portalDiv = document.getElementById("dsh-revert-portal-root");
       if (!portalDiv) {
         portalDiv = document.createElement("div");
@@ -282,7 +265,6 @@ window.__ModuleLoader__.load({
         } catch (e) {}
       }
 
-      // 监听 DOM 树变化，实时挂载图2风格的回退图标
       const observer = new MutationObserver(() => {
         attachUserRevertIcons();
       });
