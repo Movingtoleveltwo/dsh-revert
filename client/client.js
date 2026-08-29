@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
     const name = "dsh-revert";
     const inject = ["slots", "locale", "connection"];
 
-    // 样式注入：1:1 复刻 Antigravity Confirm Undo 弹窗与图标
+    // 样式注入：1:1 复刻 Antigravity 确认撤销弹窗与图标
     function injectStyles() {
       if (document.getElementById("dsh-revert-agy-style")) return;
       const style = document.createElement("style");
@@ -44,11 +44,10 @@ window.__ModuleLoader__.load({
       document.head.appendChild(style);
     }
 
-    // 1:1 Antigravity Confirm Undo 对话框
+    // 中文版 Antigravity 确认撤销对话框
     function AntigravityConfirmUndoModal({ open, onClose, onConfirm, hasCodeChanges, loading }) {
       if (!open) return null;
 
-      // 键盘快捷键监听：Enter 确认，Escape 取消
       useEffect(() => {
         const handleKeyDown = (e) => {
           if (e.key === "Enter") {
@@ -100,7 +99,7 @@ window.__ModuleLoader__.load({
           h("h3", {
             key: "title",
             style: { margin: 0, fontSize: "16px", fontWeight: "600", color: "#f8fafc" }
-          }, "Confirm Undo"),
+          }, "确认撤销"),
           h("button", {
             key: "close",
             onClick: onClose,
@@ -111,8 +110,8 @@ window.__ModuleLoader__.load({
           key: "desc",
           style: { margin: 0, fontSize: "14px", color: "#94a3b8", lineHeight: 1.5 }
         }, hasCodeChanges
-          ? "This undo action will revert all code changes made in this turn."
-          : "This undo action will not make any code changes."
+          ? "本次撤销操作将还原该轮对话产生的所有代码变更。"
+          : "本次撤销操作不会产生任何代码变更。"
         ),
         h("div", {
           key: "actions",
@@ -131,13 +130,13 @@ window.__ModuleLoader__.load({
               fontWeight: "500",
               padding: "6px 10px"
             }
-          }, "Cancel"),
+          }, "取消"),
           h("button", {
             key: "confirm",
             disabled: loading,
             onClick: onConfirm,
             style: {
-              padding: "7px 16px",
+              padding: "7px 18px",
               borderRadius: "6px",
               border: "none",
               background: "#0284c7",
@@ -151,7 +150,7 @@ window.__ModuleLoader__.load({
               boxShadow: "0 2px 6px rgba(2, 132, 199, 0.35)"
             }
           }, [
-            h("span", { key: "txt" }, loading ? "Reverting..." : "Confirm"),
+            h("span", { key: "txt" }, loading ? "正在撤销..." : "确认"),
             h("span", { key: "enter", style: { opacity: 0.7, fontSize: "12px" } }, "↵")
           ])
         ])
@@ -186,7 +185,7 @@ window.__ModuleLoader__.load({
 
           setModalState({ open: false, initialText: "", hasCodeChanges: false, loading: false });
         } catch (err) {
-          alert("Undo failed: " + err.message);
+          alert("撤销失败: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
         }
       };
@@ -200,7 +199,7 @@ window.__ModuleLoader__.load({
       });
     }
 
-    // 1:1 在用户消息气泡下方的动作栏（时间与复制图标旁）添加纯图标 ↩ 按钮
+    // 在用户消息气泡下方的动作栏（时间与复制图标旁）添加纯图标 ↩ 按钮
     function attachUserRevertIcons() {
       const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[class*="userRow"]');
       userRows.forEach((row) => {
@@ -213,10 +212,10 @@ window.__ModuleLoader__.load({
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'dsh-revert-icon-btn';
-        btn.setAttribute('aria-label', 'Undo to this message');
-        btn.title = 'Undo / Revert (Confirm Undo)';
+        btn.setAttribute('aria-label', '撤销至此轮对话');
+        btn.title = '撤销至此轮 (Confirm Undo)';
 
-        // 1:1 弧形回退箭头 SVG
+        // 弧形回退箭头 SVG
         btn.innerHTML = `
           <svg viewBox="0 0 16 16" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
             <path d="M5.5 3.5L2 7L5.5 10.5"/>
