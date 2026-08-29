@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({
     const { useState, useEffect, createElement: h } = React;
 
     const name = "dsh-revert";
-    const inject = ["slots", "locale", "connection", "sessions"];
+    const inject = ["slots", "locale", "connection", "sessions", "uiConversation", "uiSession"];
 
     // 样式注入：1:1 复刻 Antigravity 确认撤销弹窗与图标
     function injectStyles() {
@@ -160,28 +160,40 @@ window.__ModuleLoader__.load({
     let globalSetModalState = null;
     let globalCtx = null;
 
+    // 完美兼容 Lexical 富文本编辑器及普通 textarea 的文本回填与聚焦
     function fillComposerText(text) {
-      const composer = document.querySelector("textarea");
-      if (!composer) return;
-      try {
+      if (!text) return;
+      const editor = document.querySelector('[contenteditable="true"]') ||
+                     document.querySelector('[data-lexical-editor="true"]') ||
+                     document.querySelector('textarea');
+      if (!editor) return;
+
+      editor.focus();
+
+      if (editor.tagName && editor.tagName.toLowerCase() === 'textarea') {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-        if (setter) {
-          setter.call(composer, text);
-        } else {
-          composer.value = text;
+        if (setter) setter.call(editor, text);
+        else editor.value = text;
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+        editor.dispatchEvent(new Event("change", { bubbles: true }));
+      } else {
+        // Lexical / contenteditable 编辑器回填
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        const success = document.execCommand("insertText", false, text);
+        if (!success || editor.textContent.trim() !== text.trim()) {
+          editor.textContent = text;
+          editor.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
         }
-        composer.dispatchEvent(new Event("input", { bubbles: true }));
-        composer.dispatchEvent(new Event("change", { bubbles: true }));
-        composer.focus();
-        // 光标移至末尾
-        composer.setSelectionRange(text.length, text.length);
-      } catch (e) {
-        console.warn("[dsh-revert] fill composer error:", e);
       }
     }
 
     function GlobalRevertPortal() {
-      const [modalState, setModalState] = useState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false });
+      const [modalState, setModalState] = useState({ open: false, initialText: "", targetSeq: null, targetElement: null, hasCodeChanges: false, loading: false });
       globalSetModalState = setModalState;
 
       const handleConfirm = async () => {
@@ -189,8 +201,10 @@ window.__ModuleLoader__.load({
         try {
           const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
           const targetSeq = modalState.targetSeq;
+          const promptText = modalState.initialText;
+          const targetEl = modalState.targetElement;
 
-          // 1. 调用后端快照还原代码
+          // 1. 调用后端 RPC 进行文件恢复
           await fetch("/dsh-revert/rpc", {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -200,7 +214,17 @@ window.__ModuleLoader__.load({
             })
           }).catch(() => {});
 
-          // 2. 截断会话并无缝切换
+          // 2. 隐藏目标气泡之后的所有会话节点 (即时视觉截断)
+          if (targetEl) {
+            let next = targetEl.closest('[data-chat-flow-key]') || targetEl;
+            let current = next ? next.nextElementSibling : null;
+            while (current) {
+              current.style.display = "none";
+              current = current.nextElementSibling;
+            }
+          }
+
+          // 3. 尝试 DSH 底层 sessions.fork 切分支
           if (globalCtx?.sessions && sessionId && targetSeq !== null) {
             try {
               const forkAtSeq = Math.max(0, targetSeq - 1);
@@ -217,14 +241,12 @@ window.__ModuleLoader__.load({
             }
           }
 
-          // 3. 自动回填 Prompt 到输入框并聚焦
+          // 4. 自动回填 Prompt 到输入框
           setTimeout(() => {
-            if (modalState.initialText) {
-              fillComposerText(modalState.initialText);
-            }
-          }, 150);
+            fillComposerText(promptText);
+          }, 100);
 
-          setModalState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false });
+          setModalState({ open: false, initialText: "", targetSeq: null, targetElement: null, hasCodeChanges: false, loading: false });
         } catch (err) {
           alert("撤销失败: " + err.message);
           setModalState((s) => ({ ...s, loading: false }));
@@ -235,7 +257,7 @@ window.__ModuleLoader__.load({
         open: modalState.open,
         hasCodeChanges: modalState.hasCodeChanges,
         loading: modalState.loading,
-        onClose: () => setModalState({ open: false, initialText: "", targetSeq: null, hasCodeChanges: false, loading: false }),
+        onClose: () => setModalState({ open: false, initialText: "", targetSeq: null, targetElement: null, hasCodeChanges: false, loading: false }),
         onConfirm: handleConfirm
       });
     }
@@ -275,7 +297,14 @@ window.__ModuleLoader__.load({
           e.stopPropagation();
           const text = bubble ? bubble.textContent.trim() : '';
           if (globalSetModalState) {
-            globalSetModalState({ open: true, initialText: text, targetSeq: seq, hasCodeChanges: false, loading: false });
+            globalSetModalState({
+              open: true,
+              initialText: text,
+              targetSeq: seq,
+              targetElement: row,
+              hasCodeChanges: false,
+              loading: false
+            });
           }
         };
 
