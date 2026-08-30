@@ -102,33 +102,30 @@ window.__ModuleLoader__.load({
 
     function getForkSeqForTurn(globalCtx, sessionId, targetTurn, chatSnapshot) {
       if (targetTurn === 0 || targetTurn === null || targetTurn === undefined) return undefined;
-      
-      let forkBoundary = 0;
-      
-      const session = globalCtx.sessions?.get?.(sessionId);
-      if (session && session.events) {
-        for (const event of session.events) {
-          if (event.type === 'turn/end' && event.data && event.data.turn === targetTurn - 1) {
-            forkBoundary = event.seq;
-          }
-        }
-        if (forkBoundary > 0) return forkBoundary;
+
+      // 1. 优先从 DSH 官方 Chat 快照的 legacy.turnEnds 获取该轮次的精准结束 seq
+      const endSeq = chatSnapshot?.legacy?.turnEnds?.get?.(targetTurn)
+        || chatSnapshot?.timeline?.turns?.get?.(targetTurn)?.end?.seq;
+      if (typeof endSeq === 'number' && endSeq > 0) {
+        return endSeq;
       }
-      
+
+      // 2. 备用策略：从 chatSnapshot.nodes 中查找目标轮次的 turn-tail 节点
       if (chatSnapshot && chatSnapshot.nodes) {
         for (const node of chatSnapshot.nodes.values()) {
           const loc = node.location;
-          if ((loc?.kind === 'turn' || loc?.kind === 'step') && loc.turn.turn === targetTurn) {
-            if (node.kind === 'user' || node.kind === 'steering' || node.type === 'user' || node.type === 'steering') {
-              const anchorSeq = node.anchorSeq !== undefined ? node.anchorSeq : node.seq;
-              if (anchorSeq !== undefined && anchorSeq >= 2) {
-                forkBoundary = anchorSeq - 2; 
+          if (loc && (loc.kind === 'turn' || loc.kind === 'step') && loc.turn.turn === targetTurn) {
+            if (node.kind === 'turn-tail' || node.type === 'turn-tail') {
+              const closingSeq = node.data?.closing?.finalNode?.seq ?? node.data?.seq ?? node.seq;
+              if (typeof closingSeq === 'number' && closingSeq > 0) {
+                return closingSeq;
               }
             }
           }
         }
       }
-      return forkBoundary > 0 ? forkBoundary : undefined;
+
+      return undefined;
     }
 
     function GlobalRevertPortal() {
