@@ -88,7 +88,7 @@ window.__ModuleLoader__.load({
             h('button', { className: 'dsh-revert-modal-close', onClick: onClose }, "×")
           ),
           h('div', { className: 'dsh-revert-modal-body' },
-            hasCodeChanges ? "发现 AI 在此轮对话后进行了代码修改。撤销操作将物理回滚相关代码，抹除记忆，这会导致该回合及其后所有内容完全丢失，无法恢复。" : "本次撤销操作不会产生任何代码变更。"
+            "本次撤销将回滚相关代码与外部文件（若有）至当时状态，并彻底抹除该回合及后续所有对话记忆。此操作物理生效且不可逆，请确认是否继续？"
           ),
           h('div', { className: 'dsh-revert-modal-actions' },
             h('button', { className: 'dsh-revert-btn dsh-revert-btn-cancel', onClick: onClose, disabled: loading }, "取消"),
