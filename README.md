@@ -1,36 +1,11 @@
 # dsh-revert
 
-[English](#english) | [简体中文](#简体中文)
-
----
-
-<a name="english"></a>
-## 🇬🇧 English
-
-A modern UI-based rewind and retry plugin for DeepSeek Harness (DSH). Features inline prompt editing and a flawless dual-engine state recovery system (Workspace ShadowGit + External Tracker).
-
-### ✨ Key Features
-- 🎯 **Pure UI Interaction**: Hover over any chat message and click the "↩️ Rewind" button. No slash commands required.
-- ✏️ **Inline Prompt Editing**: Automatically extracts and fills the prompt from the reverted turn into your composer.
-- 🛡️ **Workspace Shadow Git**: Maintains lightweight, isolated snapshots of your workspace. Rolls back AI code changes in seconds **without polluting your own Git repository**.
-- 🌐 **External File Interceptor**: Safely tracks and reverts files modified by the AI *outside* of the current workspace.
-- 📱 **Fully Responsive**: Seamlessly adapts to Desktop, Tablet, and Mobile views.
-
-### 🚀 Installation
-**Method 1: Plugin Market**
-Search for `dsh-revert` in DSH [Settings ➔ Plugin Market] and install it with one click.
-
-**Method 2: Manual Link**
-```bash
-cd ~/.dsh/profiles/web
-npm link /path/to/dsh-revert
-```
-Add `"dsh-revert"` to `dsh.profile.bundles` in your `package.json` and restart DSH.
+[简体中文](#简体中文) | [English](#english)
 
 ---
 
 <a name="简体中文"></a>
-## 🇨🇳 简体中文
+## 简体中文
 
 DeepSeek Harness (DSH) 现代化对话回退与重试插件：纯 UI 图形化交互、原地 Prompt 微调、支持工作区与外部文件双引擎安全快照恢复。
 
@@ -53,6 +28,31 @@ cd ~/.dsh/profiles/web
 npm link /path/to/dsh-revert
 ```
 在 `~/.dsh/profiles/web/package.json` 中的 `dsh.profile.bundles` 添加 `"dsh-revert"`，重启 DSH 即可生效。
+
+---
+
+<a name="english"></a>
+## English
+
+A modern UI-based rewind and retry plugin for DeepSeek Harness (DSH). Features inline prompt editing and a flawless dual-engine state recovery system (Workspace ShadowGit + External Tracker).
+
+### ✨ Key Features
+- 🎯 **Pure UI Interaction**: Hover over any chat message and click the "↩️ Rewind" button. No slash commands required.
+- ✏️ **Inline Prompt Editing**: Automatically extracts and fills the prompt from the reverted turn into your composer.
+- 🛡️ **Workspace Shadow Git**: Maintains lightweight, isolated snapshots of your workspace. Rolls back AI code changes in seconds **without polluting your own Git repository**.
+- 🌐 **External File Interceptor**: Safely tracks and reverts files modified by the AI *outside* of the current workspace.
+- 📱 **Fully Responsive**: Seamlessly adapts to Desktop, Tablet, and Mobile views.
+
+### 🚀 Installation
+**Method 1: Plugin Market**
+Search for `dsh-revert` in DSH [Settings ➔ Plugin Market] and install it with one click.
+
+**Method 2: Manual Link**
+```bash
+cd ~/.dsh/profiles/web
+npm link /path/to/dsh-revert
+```
+Add `"dsh-revert"` to `dsh.profile.bundles` in your `package.json` and restart DSH.
 
 ---
 
