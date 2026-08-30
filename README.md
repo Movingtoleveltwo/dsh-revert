@@ -29,6 +29,9 @@ npm link /path/to/dsh-revert
 ```
 在 `~/.dsh/profiles/web/package.json` 中的 `dsh.profile.bundles` 添加 `"dsh-revert"`，重启 DSH 即可生效。
 
+### 💬 问题反馈
+本项目致力于提供最稳定、丝滑的对话回退体验。如果您在使用过程中遇到任何 Bug、文件未正确回滚的情况，或者有新的功能建议，非常欢迎您在 [Issues](https://github.com/Movingtoleveltwo/dsh-revert/issues) 中向我反馈。我看到后会第一时间进行排查和修复！期待与大家一起把这个插件打磨得更好。
+
 ---
 
 <a name="english"></a>
@@ -53,6 +56,9 @@ cd ~/.dsh/profiles/web
 npm link /path/to/dsh-revert
 ```
 Add `"dsh-revert"` to `dsh.profile.bundles` in your `package.json` and restart DSH.
+
+### 💬 Feedback & Support
+If you encounter any bugs, unexpected rollback behaviors, or have feature requests, please feel free to open an [Issue](https://github.com/Movingtoleveltwo/dsh-revert/issues). I actively monitor them and will do my best to investigate and fix any problems promptly!
 
 ---
 
