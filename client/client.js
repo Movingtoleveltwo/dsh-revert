@@ -141,11 +141,42 @@ window.__ModuleLoader__.load({
           const promptText = modalState.initialText;
           const flowItem = modalState.targetFlowItem;
 
+          // 提取该轮回退的图片附件（如果有）
+          const chatSnapshot = globalCtx.uiConversation.binding(sessionId).target('chat').getSnapshot();
+          const session = globalCtx.sessions?.get?.(sessionId);
+          const extractedFiles = [];
+          
+          try {
+            if (chatSnapshot && chatSnapshot.nodes && session) {
+              for (const node of chatSnapshot.nodes.values()) {
+                if (node.location?.turn?.turn === targetTurn && (node.type === 'user' || node.kind === 'user')) {
+                  const contentBlocks = node.data?.content || [];
+                  let imgIndex = 1;
+                  for (const block of contentBlocks) {
+                    if (block.type === 'image' && block.attachment) {
+                      try {
+                        const att = block.attachment;
+                        if (typeof session.readAttachment === 'function') {
+                          const res = await session.readAttachment(att.attachmentId);
+                          if (res && res.ok && res.value?.data) {
+                            const blob = new Blob([res.value.data], { type: att.mediaType || 'image/png' });
+                            const file = new File([blob], `image-${imgIndex++}.png`, { type: att.mediaType || 'image/png' });
+                            extractedFiles.push(file);
+                          }
+                        }
+                      } catch (e) {
+                        console.warn("[dsh-revert] extract attachment err:", e);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } catch(e) { console.warn("[dsh-revert] attachment parsing err:", e); }
 
           // 【选项 A】瞬间关闭弹窗，给用户最快的 UI 响应反馈
           setModalState({ open: false, initialText: "", targetTurn: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
 
-          const chatSnapshot = globalCtx.uiConversation.binding(sessionId).target('chat').getSnapshot();
           const atSeq = getForkSeqForTurn(globalCtx, sessionId, targetTurn, chatSnapshot);
           const summary = globalCtx.sessions.list.getSnapshot().byId[sessionId];
 
@@ -177,6 +208,20 @@ window.__ModuleLoader__.load({
           }
 
           fillComposerText(promptText);
+
+          // 回填图片附件：利用 DSH 的全局 drop 监听伪造事件，绕过粘贴安全限制
+          if (extractedFiles.length > 0) {
+            setTimeout(() => {
+              try {
+                const dt = new DataTransfer();
+                extractedFiles.forEach(f => dt.items.add(f));
+                const dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
+                document.dispatchEvent(dropEvent);
+              } catch(e) {
+                console.warn("[dsh-revert] drop event err:", e);
+              }
+            }, 300);
+          }
         } catch (err) {
           console.error("[dsh-revert] Error:", err);
           alert("撤销失败: " + err.message);
