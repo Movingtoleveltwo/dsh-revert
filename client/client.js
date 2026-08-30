@@ -143,13 +143,15 @@ window.__ModuleLoader__.load({
 
           // 提取该轮回退的图片附件（如果有）
           const chatSnapshot = globalCtx.uiConversation.binding(sessionId).target('chat').getSnapshot();
-          const session = globalCtx.sessions?.get?.(sessionId);
+          const session = globalCtx.sessions?.binding?.(sessionId)?.session;
           const extractedFiles = [];
+          const currentTurn = (targetTurn !== null && targetTurn !== undefined) ? targetTurn + 1 : null;
           
           try {
             if (chatSnapshot && chatSnapshot.nodes && session) {
               for (const node of chatSnapshot.nodes.values()) {
-                if (node.location?.turn?.turn === targetTurn && (node.type === 'user' || node.kind === 'user')) {
+                const nodeTurn = node.location?.kind === 'turn' || node.location?.kind === 'step' ? node.location.turn?.turn : undefined;
+                if (nodeTurn === currentTurn && (node.kind === 'user' || node.kind === 'steering' || node.type === 'user' || node.type === 'steering')) {
                   const contentBlocks = node.data?.content || [];
                   let imgIndex = 1;
                   for (const block of contentBlocks) {
@@ -159,8 +161,9 @@ window.__ModuleLoader__.load({
                         if (typeof session.readAttachment === 'function') {
                           const res = await session.readAttachment(att.attachmentId);
                           if (res && res.ok && res.value?.data) {
-                            const blob = new Blob([res.value.data], { type: att.mediaType || 'image/png' });
-                            const file = new File([blob], `image-${imgIndex++}.png`, { type: att.mediaType || 'image/png' });
+                            const mediaType = att.mediaType || res.value.attachment?.mediaType || 'image/png';
+                            const blob = new Blob([res.value.data], { type: mediaType });
+                            const file = new File([blob], `image-${imgIndex++}.png`, { type: mediaType });
                             extractedFiles.push(file);
                           }
                         }
@@ -211,16 +214,23 @@ window.__ModuleLoader__.load({
 
           // 回填图片附件：利用 DSH 的全局 drop 监听伪造事件，绕过粘贴安全限制
           if (extractedFiles.length > 0) {
-            setTimeout(() => {
-              try {
-                const dt = new DataTransfer();
-                extractedFiles.forEach(f => dt.items.add(f));
-                const dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
-                document.dispatchEvent(dropEvent);
-              } catch(e) {
-                console.warn("[dsh-revert] drop event err:", e);
+            const tryDrop = (retries) => {
+              const editorRoots = document.querySelectorAll('[contenteditable="true"]');
+              const targetEditor = editorRoots[editorRoots.length - 1];
+              if (targetEditor && targetEditor.offsetParent !== null) {
+                try {
+                  const dt = new DataTransfer();
+                  extractedFiles.forEach(f => dt.items.add(f));
+                  const dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
+                  document.dispatchEvent(dropEvent);
+                } catch(e) {
+                  console.warn("[dsh-revert] drop event err:", e);
+                }
+              } else if (retries > 0) {
+                setTimeout(() => tryDrop(retries - 1), 100);
               }
-            }, 300);
+            };
+            setTimeout(() => tryDrop(15), 150);
           }
         } catch (err) {
           console.error("[dsh-revert] Error:", err);
