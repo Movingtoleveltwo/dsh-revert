@@ -12,6 +12,7 @@ window.__ModuleLoader__.load({
     let globalSetModalState = null;
     let sessionsService = null;
     let uiConversationService = null;
+    let workspacesService = null;
 
     function injectStyles() {
       if (document.getElementById("dsh-revert-styles")) return;
@@ -213,6 +214,20 @@ window.__ModuleLoader__.load({
             sessions.open(childId);
           }
 
+          // 归档旧会话以避免侧边栏出现重复同名会话
+          if (sessionId && sessionId !== childId) {
+            try {
+              const ws = workspacesService || (globalCtx?.get ? globalCtx.get('workspaces') : globalCtx?.workspaces);
+              if (ws && typeof ws.archiveSession === 'function') {
+                ws.archiveSession(sessionId).catch((err) => {
+                  console.warn('[dsh-revert] 归档旧会话失败:', err);
+                });
+              }
+            } catch (err) {
+              console.warn('[dsh-revert] 归档旧会话异常:', err);
+            }
+          }
+
           fillComposerText(promptText);
 
           // 回填图片附件
@@ -281,6 +296,7 @@ window.__ModuleLoader__.load({
       globalCtx = ctx;
       sessionsService = ctx.get ? ctx.get('sessions') : ctx.sessions;
       uiConversationService = ctx.get ? ctx.get('uiConversation') : ctx.uiConversation;
+      workspacesService = ctx.get ? ctx.get('workspaces') : ctx.workspaces;
       
       injectStyles();
       let portalDiv = document.getElementById("dsh-revert-portal-root");
