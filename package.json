@@ -1,6 +1,6 @@
 {
   "name": "dsh-revert",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "DeepSeek Harness 现代化对话回退与重试插件：纯 UI 图形交互、原地 Prompt 微调、支持工作区与外部文件双引擎安全恢复。",
   "type": "module",
   "main": "lib/index.js",

@@ -20,24 +20,29 @@ window.__ModuleLoader__.load({
       style.id = "dsh-revert-styles";
       style.innerHTML = `
         .dsh-revert-icon-btn {
-          background: transparent;
-          border: none;
-          cursor: pointer;
-          opacity: 0.5;
-          padding: 4px;
-          border-radius: 4px;
-          display: flex;
+          display: inline-flex;
           align-items: center;
           justify-content: center;
-          transition: all 0.2s ease;
-          color: var(--dsh-text-muted, #888);
+          width: calc(28px + var(--dsh-content-font-delta, 0px));
+          height: calc(28px + var(--dsh-content-font-delta, 0px));
+          padding: 6px;
+          border: none;
+          border-radius: 28px;
+          background: transparent;
+          color: var(--dsw-alias-label-tertiary);
+          cursor: pointer;
+          transition: background-color 0.15s ease, color 0.15s ease;
         }
         .dsh-revert-icon-btn:hover {
-          opacity: 1;
-          background: var(--dsh-hover-bg, rgba(255,255,255,0.1));
-          color: var(--dsh-text-primary, #fff);
+          background: var(--dsw-alias-interactive-bg-hover);
+          color: var(--dsw-alias-label-secondary);
         }
-        .dsh-revert-icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; }
+        .dsh-revert-icon-btn svg {
+          width: calc(16px + var(--dsh-content-font-delta, 0px));
+          height: calc(16px + var(--dsh-content-font-delta, 0px));
+          fill: none;
+          stroke: currentColor;
+        }
         .dsh-revert-modal-overlay {
           position: fixed; top: 0; left: 0; right: 0; bottom: 0;
           background: rgba(0,0,0,0.4); backdrop-filter: blur(2px);
