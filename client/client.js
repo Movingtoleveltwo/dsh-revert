@@ -191,7 +191,13 @@ window.__ModuleLoader__.load({
 
           let childId;
           if (targetTurn === 0) {
-            globalCtx.uiWorkspace.startSession(summary?.workspaceId);
+            // 使用 DSH 官方标准的 sessions.create 创建空白新会话并打开
+            childId = await globalCtx.sessions.create({
+              workspaceId: summary?.workspaceId,
+              cwd: summary?.cwd
+            });
+            globalCtx.sessions.open(childId);
+            
             if (sessionId && globalCtx.uiWorkspace?.archiveSession) {
               globalCtx.uiWorkspace.archiveSession(sessionId).catch(() => {});
             }
@@ -256,7 +262,8 @@ window.__ModuleLoader__.load({
         const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
         const allUserItems = Array.from(document.querySelectorAll('[data-chat-flow-kind="user"]'));
         const turnAttr = flowItem.getAttribute('data-chat-turn') || row.getAttribute('data-chat-turn');
-        let turn = turnAttr !== null ? (Number(turnAttr) - 1) : null;
+        const userIndex = allUserItems.indexOf(flowItem);
+        let turn = turnAttr !== null ? (Number(turnAttr) - 1) : (userIndex >= 0 ? userIndex : null);
 
         const btn = document.createElement('button');
         btn.type = 'button'; btn.className = 'dsh-revert-icon-btn'; btn.setAttribute('aria-label', '撤销至此轮对话'); btn.title = '撤销至此轮 (Confirm Undo)';
