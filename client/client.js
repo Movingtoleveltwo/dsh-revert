@@ -10,6 +10,8 @@ window.__ModuleLoader__.load({
 
     let globalCtx = null;
     let globalSetModalState = null;
+    let sessionsService = null;
+    let uiConversationService = null;
 
     function injectStyles() {
       if (document.getElementById("dsh-revert-styles")) return;
@@ -135,15 +137,18 @@ window.__ModuleLoader__.load({
       const handleConfirm = async () => {
         setModalState((s) => ({ ...s, loading: true }));
         try {
-          const sessionId = globalCtx?.sessions?.list?.getSnapshot?.()?.current;
+          const sessions = sessionsService || (globalCtx?.get ? globalCtx.get('sessions') : globalCtx?.sessions);
+          const uiConversation = uiConversationService || (globalCtx?.get ? globalCtx.get('uiConversation') : globalCtx?.uiConversation);
+          
+          const sessionId = sessions?.list?.getSnapshot?.()?.current;
           if (!sessionId) throw new Error("No active session");
           const targetTurn = modalState.targetTurn;
           const promptText = modalState.initialText;
           const flowItem = modalState.targetFlowItem;
 
           // 提取该轮回退的图片附件（如果有）
-          const chatSnapshot = globalCtx.uiConversation.binding(sessionId).target('chat').getSnapshot();
-          const session = globalCtx.sessions?.binding?.(sessionId)?.session;
+          const chatSnapshot = uiConversation?.binding(sessionId)?.target('chat')?.getSnapshot();
+          const session = sessions?.binding?.(sessionId)?.session;
           const extractedFiles = [];
           const currentTurn = (targetTurn !== null && targetTurn !== undefined) ? targetTurn + 1 : null;
           
@@ -177,13 +182,13 @@ window.__ModuleLoader__.load({
             }
           } catch(e) { console.warn("[dsh-revert] attachment parsing err:", e); }
 
-          // 【选项 A】瞬间关闭弹窗，给用户最快的 UI 响应反馈
+          // 瞬间关闭弹窗
           setModalState({ open: false, initialText: "", targetTurn: null, targetFlowItem: null, hasCodeChanges: false, loading: false });
 
           const atSeq = getForkSeqForTurn(globalCtx, sessionId, targetTurn, chatSnapshot);
-          const summary = globalCtx.sessions.list.getSnapshot().byId[sessionId];
+          const summary = sessions?.list?.getSnapshot?.()?.byId?.[sessionId];
 
-          // 文件恢复（git 操作）在后台异步执行，必须等待物理恢复完成后再 fork 会话，防止时序错乱
+          // 文件恢复（git 操作）在后台异步执行
           await fetch("/dsh-revert/rpc", {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ action: "rollback", payload: { sessionId, atSeq: atSeq === undefined ? null : atSeq, targetTurn, restoreFiles: true, cwd: summary?.cwd } })
@@ -191,27 +196,26 @@ window.__ModuleLoader__.load({
 
           let childId;
           if (targetTurn === 0) {
-            // 使用 DSH 官方标准的 sessions.create 创建空白新会话并打开
-            childId = await globalCtx.sessions.create({
+            childId = await sessions.create({
               workspaceId: summary?.workspaceId,
               cwd: summary?.cwd
             });
-            globalCtx.sessions.open(childId);
+            sessions.open(childId);
           } else {
-            childId = await globalCtx.sessions.fork({ sessionId, atSeq, increaseTitle: false });
+            childId = await sessions.fork({ sessionId, atSeq, increaseTitle: false });
             
-            // 通知后端拷贝外部文件的快照数据到子会话，并等待完成
+            // 通知后端拷贝外部文件的快照数据到子会话
             await fetch("/dsh-revert/rpc", {
               method: "POST", headers: { "content-type": "application/json" },
               body: JSON.stringify({ action: "fork_session", payload: { oldSessionId: sessionId, newSessionId: childId } })
             }).catch(e => console.error("[dsh-revert] fork rpc error:", e));
 
-            globalCtx.sessions.open(childId);
+            sessions.open(childId);
           }
 
           fillComposerText(promptText);
 
-          // 回填图片附件：利用 DSH 的全局 drop 监听伪造事件，绕过粘贴安全限制
+          // 回填图片附件
           if (extractedFiles.length > 0) {
             const tryDrop = (retries) => {
               const editorRoots = document.querySelectorAll('[contenteditable="true"]');
@@ -275,6 +279,9 @@ window.__ModuleLoader__.load({
 
     function apply(ctx) {
       globalCtx = ctx;
+      sessionsService = ctx.get ? ctx.get('sessions') : ctx.sessions;
+      uiConversationService = ctx.get ? ctx.get('uiConversation') : ctx.uiConversation;
+      
       injectStyles();
       let portalDiv = document.getElementById("dsh-revert-portal-root");
       if (!portalDiv) { portalDiv = document.createElement("div"); portalDiv.id = "dsh-revert-portal-root"; document.body.appendChild(portalDiv); }
