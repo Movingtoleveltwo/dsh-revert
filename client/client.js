@@ -6,7 +6,7 @@ window.__ModuleLoader__.load({
     const { useState, createElement: h } = React;
 
     const name = "dsh-revert";
-    const inject = ["slots", "locale", "connection", "sessions", "uiConversation", "uiSession", "uiWorkspace"];
+    const inject = ["slots", "locale", "connection", "sessions", "uiConversation", "uiSession"];
 
     let globalCtx = null;
     let globalSetModalState = null;
@@ -197,10 +197,6 @@ window.__ModuleLoader__.load({
               cwd: summary?.cwd
             });
             globalCtx.sessions.open(childId);
-            
-            if (sessionId && globalCtx.uiWorkspace?.archiveSession) {
-              globalCtx.uiWorkspace.archiveSession(sessionId).catch(() => {});
-            }
           } else {
             childId = await globalCtx.sessions.fork({ sessionId, atSeq, increaseTitle: false });
             
@@ -211,9 +207,6 @@ window.__ModuleLoader__.load({
             }).catch(e => console.error("[dsh-revert] fork rpc error:", e));
 
             globalCtx.sessions.open(childId);
-            if (sessionId && globalCtx.uiWorkspace?.archiveSession) {
-              globalCtx.uiWorkspace.archiveSession(sessionId).catch(() => {});
-            }
           }
 
           fillComposerText(promptText);
