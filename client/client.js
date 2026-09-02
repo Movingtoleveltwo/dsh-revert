@@ -20,53 +20,143 @@ window.__ModuleLoader__.load({
       style.id = "dsh-revert-styles";
       style.innerHTML = `
         .dsh-revert-icon-btn {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: calc(28px + var(--dsh-content-font-delta, 0px));
-          height: calc(28px + var(--dsh-content-font-delta, 0px));
-          padding: 6px;
-          border: none;
-          border-radius: 28px;
-          background: transparent;
-          color: var(--dsw-alias-label-tertiary);
-          cursor: pointer;
-          transition: background-color 0.15s ease, color 0.15s ease;
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          width: calc(28px + var(--dsh-content-font-delta, 0px)) !important;
+          height: calc(28px + var(--dsh-content-font-delta, 0px)) !important;
+          padding: 6px !important;
+          border: none !important;
+          border-radius: 28px !important;
+          background: transparent !important;
+          color: var(--dsw-alias-label-tertiary) !important;
+          cursor: pointer !important;
+          transition: background-color 0.15s ease, color 0.15s ease !important;
+          user-select: none !important;
+          box-sizing: border-box !important;
         }
         .dsh-revert-icon-btn:hover {
-          background: var(--dsw-alias-interactive-bg-hover);
-          color: var(--dsw-alias-label-secondary);
+          background: var(--dsw-alias-interactive-bg-hover) !important;
+          color: var(--dsw-alias-label-secondary) !important;
         }
-        .dsh-revert-icon-btn svg {
-          width: calc(16px + var(--dsh-content-font-delta, 0px));
-          height: calc(16px + var(--dsh-content-font-delta, 0px));
-          fill: none;
-          stroke: currentColor;
+        .dsh-revert-icon-btn svg,
+        .dsh-revert-icon-btn svg path {
+          width: calc(15px + var(--dsh-content-font-delta, 0px)) !important;
+          height: calc(15px + var(--dsh-content-font-delta, 0px)) !important;
+          fill: none !important;
+          stroke: currentColor !important;
+        }
+        #dsh-revert-portal-root {
+          position: static !important;
         }
         .dsh-revert-modal-overlay {
-          position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-          background: rgba(0,0,0,0.4); backdrop-filter: blur(2px);
-          display: flex; align-items: center; justify-content: center;
-          z-index: 999999;
-          animation: dsh-fade-in 0.15s ease-out;
+          position: fixed !important;
+          top: 0 !important;
+          left: 0 !important;
+          right: 0 !important;
+          bottom: 0 !important;
+          width: 100vw !important;
+          height: 100vh !important;
+          height: 100dvh !important;
+          background: rgba(0, 0, 0, 0.55) !important;
+          backdrop-filter: blur(4px) !important;
+          -webkit-backdrop-filter: blur(4px) !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          z-index: 9999999 !important;
+          margin: 0 !important;
+          padding: 16px !important;
+          box-sizing: border-box !important;
+          animation: dsh-fade-in 0.15s ease-out !important;
         }
         .dsh-revert-modal {
-          background: var(--dsh-panel-bg, #1e1e1e);
-          border: 1px solid var(--dsh-border-color, #333);
-          border-radius: 8px; width: 360px; padding: 20px;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+          background: var(--dsh-bg-card, var(--dsw-alias-bg-layer-1, #181825)) !important;
+          color: var(--dsh-fg, var(--dsw-alias-label-primary, #cdd6f4)) !important;
+          border: 1px solid var(--dsh-border, var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.12))) !important;
+          border-radius: 12px !important;
+          width: 100% !important;
+          max-width: 440px !important;
+          padding: 20px 24px !important;
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6) !important;
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 14px !important;
+          box-sizing: border-box !important;
+          font-family: inherit !important;
         }
-        .dsh-revert-modal-title { font-size: 16px; font-weight: 600; color: #fff; margin: 0 0 12px 0; display: flex; align-items: center; justify-content: space-between; }
-        .dsh-revert-modal-close { background: none; border: none; color: #888; cursor: pointer; font-size: 18px; padding: 0; }
-        .dsh-revert-modal-close:hover { color: #fff; }
-        .dsh-revert-modal-body { font-size: 13px; color: #aaa; margin-bottom: 20px; line-height: 1.5; }
-        .dsh-revert-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
-        .dsh-revert-btn { padding: 6px 12px; border-radius: 4px; font-size: 13px; cursor: pointer; border: 1px solid transparent; }
-        .dsh-revert-btn-cancel { background: transparent; color: #ccc; }
-        .dsh-revert-btn-cancel:hover { background: rgba(255,255,255,0.05); }
-        .dsh-revert-btn-confirm { background: #0066cc; color: #fff; border-color: #0077ff; display: flex; align-items: center; gap: 6px; }
-        .dsh-revert-btn-confirm:hover { background: #0077ff; }
-        .dsh-revert-btn-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
+        .dsh-revert-modal-title {
+          font-size: 16px !important;
+          font-weight: 600 !important;
+          color: var(--dsw-alias-label-primary, #fff) !important;
+          margin: 0 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: space-between !important;
+        }
+        .dsh-revert-modal-close {
+          background: none !important;
+          border: none !important;
+          color: var(--dsw-alias-label-tertiary, #888) !important;
+          cursor: pointer !important;
+          font-size: 16px !important;
+          padding: 4px !important;
+          line-height: 1 !important;
+          border-radius: 4px !important;
+          transition: color 0.15s, background 0.15s !important;
+        }
+        .dsh-revert-modal-close:hover {
+          color: var(--dsw-alias-label-primary, #fff) !important;
+          background: var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,0.08)) !important;
+        }
+        .dsh-revert-modal-body {
+          font-size: 13.5px !important;
+          color: var(--dsw-alias-label-secondary, #aaa) !important;
+          margin: 0 !important;
+          line-height: 1.6 !important;
+        }
+        .dsh-revert-modal-actions {
+          display: flex !important;
+          justify-content: flex-end !important;
+          gap: 10px !important;
+          margin-top: 6px !important;
+        }
+        .dsh-revert-btn {
+          padding: 7px 16px !important;
+          border-radius: 6px !important;
+          font-size: 13px !important;
+          font-weight: 500 !important;
+          cursor: pointer !important;
+          border: 1px solid transparent !important;
+          transition: background 0.15s, opacity 0.15s, transform 0.1s !important;
+          user-select: none !important;
+        }
+        .dsh-revert-btn-cancel {
+          background: transparent !important;
+          color: var(--dsw-alias-label-secondary, #ccc) !important;
+          border-color: var(--dsw-alias-border-l1, rgba(255,255,255,0.15)) !important;
+        }
+        .dsh-revert-btn-cancel:hover {
+          background: var(--dsw-alias-interactive-bg-hover, rgba(255,255,255,0.06)) !important;
+          color: var(--dsw-alias-label-primary, #fff) !important;
+        }
+        .dsh-revert-btn-confirm {
+          background: #2563eb !important;
+          color: #fff !important;
+          border-color: #3b82f6 !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          gap: 6px !important;
+          font-weight: 600 !important;
+          box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35) !important;
+        }
+        .dsh-revert-btn-confirm:hover {
+          background: #1d4ed8 !important;
+        }
+        .dsh-revert-btn-confirm:disabled {
+          opacity: 0.5 !important;
+          cursor: not-allowed !important;
+        }
         @keyframes dsh-fade-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
       `;
       document.head.appendChild(style);
@@ -89,19 +179,37 @@ window.__ModuleLoader__.load({
 
     function AntigravityConfirmUndoModal({ open, onClose, onConfirm, hasCodeChanges, loading }) {
       if (!open) return null;
+
+      React.useEffect(() => {
+        const handleKeyDown = (e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+          } else if (e.key === "Enter" && !e.shiftKey && !loading) {
+            e.preventDefault();
+            onConfirm();
+          }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+      }, [open, onClose, onConfirm, loading]);
+
       return h('div', { className: 'dsh-revert-modal-overlay', onClick: onClose },
         h('div', { className: 'dsh-revert-modal', onClick: (e) => e.stopPropagation() },
           h('div', { className: 'dsh-revert-modal-title' },
-            "确认撤销",
-            h('button', { className: 'dsh-revert-modal-close', onClick: onClose }, "×")
+            h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } }, [
+              h('span', { key: 'icon', style: { fontSize: '15px' } }, '↩️'),
+              h('span', { key: 'txt' }, '确认撤销')
+            ]),
+            h('button', { type: 'button', className: 'dsh-revert-modal-close', onClick: onClose }, '✕')
           ),
           h('div', { className: 'dsh-revert-modal-body' },
-            "本次撤销将回滚相关代码与外部文件（若有）至当时状态，并彻底抹除该回合及后续所有对话记忆。此操作物理生效且不可逆，请确认是否继续？"
+            '本次撤销将回滚相关代码与外部文件（若有）至当时状态，并彻底抹除该回合及后续所有对话记忆。此操作物理生效且不可逆，请确认是否继续？'
           ),
           h('div', { className: 'dsh-revert-modal-actions' },
-            h('button', { className: 'dsh-revert-btn dsh-revert-btn-cancel', onClick: onClose, disabled: loading }, "取消"),
-            h('button', { className: 'dsh-revert-btn dsh-revert-btn-confirm', onClick: onConfirm, disabled: loading }, 
-              loading ? "回滚中..." : "确认 ↵"
+            h('button', { type: 'button', className: 'dsh-revert-btn dsh-revert-btn-cancel', onClick: onClose, disabled: loading }, '取消'),
+            h('button', { type: 'button', className: 'dsh-revert-btn dsh-revert-btn-confirm', onClick: onConfirm, disabled: loading }, 
+              loading ? '回滚中…' : '确认 ↵'
             )
           )
         )
@@ -284,7 +392,7 @@ window.__ModuleLoader__.load({
 
         const btn = document.createElement('button');
         btn.type = 'button'; btn.className = 'dsh-revert-icon-btn'; btn.setAttribute('aria-label', '撤销至此轮对话'); btn.title = '撤销至此轮 (Confirm Undo)';
-        btn.innerHTML = `<svg viewBox="0 0 16 16" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3.5L2 7L5.5 10.5"/><path d="M2.5 7H9C11.5 7 13.5 9 13.5 11.5V12.5"/></svg>`;
+        btn.innerHTML = `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" style="fill: none !important; stroke: currentColor !important;"><path d="M5.5 3.5L2 7L5.5 10.5" fill="none" style="fill: none !important; stroke: currentColor !important;"/><path d="M2.5 7H9C11.5 7 13.5 9 13.5 11.5V12.5" fill="none" style="fill: none !important; stroke: currentColor !important;"/></svg>`;
         btn.onclick = (e) => {
           e.preventDefault(); e.stopPropagation();
           const text = bubble ? bubble.textContent.trim() : '';
