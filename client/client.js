@@ -183,17 +183,10 @@ window.__ModuleLoader__.load({
       return h('div', { 
         className: 'dsh-revert-modal-overlay', 
         onClick: onClose,
-        tabIndex: -1,
-        ref: (el) => { if (el) el.focus(); },
         onKeyDown: (e) => {
           if (e.key === "Escape") {
-            e.preventDefault();
             e.stopPropagation();
             onClose();
-          } else if (e.key === "Enter" && !e.shiftKey && !loading) {
-            e.preventDefault();
-            e.stopPropagation();
-            onConfirm();
           }
         }
       },
