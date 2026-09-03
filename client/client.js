@@ -183,16 +183,14 @@ window.__ModuleLoader__.load({
         const handleKeyDown = (e) => {
           if (e.key === "Escape") {
             e.preventDefault();
-            e.stopPropagation();
             onClose();
           } else if (e.key === "Enter" && !e.shiftKey && !loading) {
             e.preventDefault();
-            e.stopPropagation();
             onConfirm();
           }
         };
-        window.addEventListener("keydown", handleKeyDown, true);
-        return () => window.removeEventListener("keydown", handleKeyDown, true);
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
       }, [open, onClose, onConfirm, loading]);
 
       if (!open) return null;
