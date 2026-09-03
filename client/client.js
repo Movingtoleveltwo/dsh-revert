@@ -178,21 +178,24 @@ window.__ModuleLoader__.load({
     }
 
     function AntigravityConfirmUndoModal({ open, onClose, onConfirm, hasCodeChanges, loading }) {
-      if (!open) return null;
-
       React.useEffect(() => {
+        if (!open) return;
         const handleKeyDown = (e) => {
           if (e.key === "Escape") {
             e.preventDefault();
+            e.stopPropagation();
             onClose();
           } else if (e.key === "Enter" && !e.shiftKey && !loading) {
             e.preventDefault();
+            e.stopPropagation();
             onConfirm();
           }
         };
-        window.addEventListener("keydown", handleKeyDown);
-        return () => window.removeEventListener("keydown", handleKeyDown);
+        window.addEventListener("keydown", handleKeyDown, true);
+        return () => window.removeEventListener("keydown", handleKeyDown, true);
       }, [open, onClose, onConfirm, loading]);
+
+      if (!open) return null;
 
       return h('div', { className: 'dsh-revert-modal-overlay', onClick: onClose },
         h('div', { className: 'dsh-revert-modal', onClick: (e) => e.stopPropagation() },
