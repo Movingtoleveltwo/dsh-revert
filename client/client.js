@@ -211,14 +211,14 @@ window.__ModuleLoader__.load({
     }
 
     function attachUserRevertIcons() {
-      const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[class*="userRow"]');
+      const userRows = document.querySelectorAll('div[data-chat-flow-kind="user"], div[data-chat-flow-kind="steering"], div[class*="userRow"]');
       userRows.forEach((row) => {
         if (row.querySelector('.dsh-revert-icon-btn')) return;
         const actionsRow = row.querySelector('[class*="actions"]');
         const bubble = row.querySelector('[class*="bubble"]');
         if (!actionsRow && !bubble) return;
         const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
-        const allUserItems = Array.from(document.querySelectorAll('[data-chat-flow-kind="user"]'));
+        const allUserItems = Array.from(document.querySelectorAll('[data-chat-flow-kind="user"], [data-chat-flow-kind="steering"]'));
         const turnAttr = flowItem.getAttribute('data-chat-turn') || row.getAttribute('data-chat-turn');
         const userIndex = allUserItems.indexOf(flowItem);
         let turn = turnAttr !== null ? (Number(turnAttr) - 1) : (userIndex >= 0 ? userIndex : null);
@@ -240,6 +240,8 @@ window.__ModuleLoader__.load({
         if (actionsRow) {
           const copyBtn = actionsRow.querySelector('button');
           if (copyBtn && copyBtn.nextSibling) actionsRow.insertBefore(btn, copyBtn.nextSibling); else actionsRow.appendChild(btn);
+        } else if (bubble) {
+          bubble.appendChild(btn);
         }
       });
     }
