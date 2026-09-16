@@ -5,12 +5,14 @@ window.__ModuleLoader__.load({
     const ReactDOM = require("react-dom");
 
     const name = "dsh-revert";
-    const inject = ["slots", "locale", "connection", "sessions", "uiConversation", "uiSession", "workspaces"];
+    const inject = ["slots", "locale", "connection", "sessions", "uiConversation", "uiSession", "workspaces", "uiWorkspace", "conversation"];
 
     let globalCtx = null;
     let sessionsService = null;
     let uiConversationService = null;
     let workspacesService = null;
+    let uiWorkspaceService = null;
+    let conversationService = null;
     let isReverting = false;
 
     function injectStyles() {
@@ -49,71 +51,105 @@ window.__ModuleLoader__.load({
       document.head.appendChild(style);
     }
 
-    function fillComposerText(text) {
-      if (!text) return;
-      const tryFill = (retries) => {
-        const editorRoots = document.querySelectorAll('[contenteditable="true"]');
-        let targetEditor = editorRoots[editorRoots.length - 1];
-        if (targetEditor && targetEditor.offsetParent !== null) {
-          targetEditor.focus();
-          document.execCommand('insertText', false, text);
-        } else if (retries > 0) {
-          setTimeout(() => tryFill(retries - 1), 100);
-        }
-      };
-      setTimeout(() => tryFill(15), 100);
+    function getCleanText(bubble) {
+      if (!bubble) return '';
+      const clone = bubble.cloneNode(true);
+      clone.querySelectorAll('.dsh-revert-icon-btn').forEach(el => el.remove());
+      return clone.textContent.trim();
     }
 
-    function getForkSeqForTurn(globalCtx, sessionId, targetTurn, chatSnapshot) {
-      if (targetTurn === 0 || targetTurn === null || targetTurn === undefined) return undefined;
+    // 精准查找目标保留轮次 (targetTurnToKeep) 的 turn/end 结束 event.seq
+    function getForkSeqForTurn(globalCtx, sessionsService, sessionId, targetTurn, chatSnapshot) {
+      if (targetTurn <= 0 || targetTurn === null || targetTurn === undefined) return undefined;
 
-      // 1. 优先从 DSH 官方 Chat 快照的 legacy.turnEnds 获取该轮次的精准结束 seq
-      const endSeq = chatSnapshot?.legacy?.turnEnds?.get?.(targetTurn)
-        || chatSnapshot?.timeline?.turns?.get?.(targetTurn)?.end?.seq;
-      if (typeof endSeq === 'number' && endSeq > 0) {
-        return endSeq;
+      // 1. 从 Sessions Binding 的原始 EventSource 中寻找目标轮次 targetTurn 的 turn/end 事件 seq
+      try {
+        const sessions = sessionsService || (globalCtx?.get ? globalCtx.get('sessions') : globalCtx?.sessions);
+        const binding = sessions?.binding?.(sessionId);
+        const window = binding?.eventSource?.getSnapshot?.();
+        const entries = window?.entries || [];
+
+        let turnCount = 0;
+        for (const entry of entries) {
+          const ev = entry.event || entry;
+          if (ev && ev.type === 'turn/end') {
+            turnCount++;
+            const turnNum = ev.data?.turn ?? turnCount;
+            if (turnNum === targetTurn || turnCount === targetTurn) {
+              if (typeof ev.seq === 'number' && ev.seq > 0) {
+                return ev.seq;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[dsh-revert] EventSource lookup error:', e);
       }
 
-      // 2. 备用策略：从 chatSnapshot.nodes 中查找目标轮次的 turn-tail 节点
+      // 2. 从 DSH 官方 Chat 快照的 legacy.turnEnds 读取该轮次的精准结束 seq
+      try {
+        const legacyEnds = chatSnapshot?.legacy?.turnEnds;
+        const endSeq = (typeof legacyEnds?.get === 'function' ? legacyEnds.get(targetTurn) : legacyEnds?.[targetTurn])
+          || chatSnapshot?.timeline?.turns?.get?.(targetTurn)?.end?.seq;
+        if (typeof endSeq === 'number' && endSeq > 0) {
+          return endSeq;
+        }
+      } catch (e) {
+        console.warn('[dsh-revert] legacyEnds lookup error:', e);
+      }
+
+      // 3. 从 chatSnapshot.nodes 中查找目标轮次的 turn-tail 节点
       if (chatSnapshot && chatSnapshot.nodes) {
-        for (const node of chatSnapshot.nodes.values()) {
-          const loc = node.location;
-          if (loc && (loc.kind === 'turn' || loc.kind === 'step') && loc.turn.turn === targetTurn) {
-            if (node.kind === 'turn-tail' || node.type === 'turn-tail') {
-              const closingSeq = node.data?.closing?.finalNode?.seq ?? node.data?.seq ?? node.seq;
+        try {
+          const nodesList = typeof chatSnapshot.nodes.values === 'function' ? Array.from(chatSnapshot.nodes.values()) : (chatSnapshot.nodes || []);
+          for (const node of nodesList) {
+            const loc = node.location;
+            const nodeTurn = (loc?.kind === 'turn' || loc?.kind === 'step') ? loc.turn?.turn : undefined;
+            if (nodeTurn === targetTurn && (node.kind === 'turn-tail' || node.type === 'turn-tail')) {
+              const closingSeq = node.data?.closing?.finalNode?.seq ?? node.data?.seq ?? node.seq ?? node.anchorSeq;
               if (typeof closingSeq === 'number' && closingSeq > 0) {
                 return closingSeq;
               }
             }
           }
+        } catch (e) {
+          console.warn('[dsh-revert] nodes turn-tail lookup error:', e);
         }
       }
 
       return undefined;
     }
 
-    async function executeDirectRevert({ targetTurn, promptText, flowItem }) {
+    async function executeDirectRevert({ targetTurnToKeep, promptText, flowItem }) {
       if (isReverting) return;
       isReverting = true;
 
       try {
         const sessions = sessionsService || (globalCtx?.get ? globalCtx.get('sessions') : globalCtx?.sessions);
         const uiConversation = uiConversationService || (globalCtx?.get ? globalCtx.get('uiConversation') : globalCtx?.uiConversation);
+        const uiWorkspace = uiWorkspaceService || (globalCtx?.get ? globalCtx.get('uiWorkspace') : globalCtx?.uiWorkspace);
         
         const sessionId = sessions?.list?.getSnapshot?.()?.current;
         if (!sessionId) throw new Error("No active session");
 
-        // 提取该轮回退的图片附件（如果有）
         const chatSnapshot = uiConversation?.binding(sessionId)?.target('chat')?.getSnapshot();
         const session = sessions?.binding?.(sessionId)?.session;
-        const extractedFiles = [];
-        const currentTurn = (targetTurn !== null && targetTurn !== undefined) ? targetTurn + 1 : null;
+        const summary = sessions?.list?.getSnapshot?.()?.byId?.[sessionId];
+
+        const safeTargetTurn = (targetTurnToKeep === null || targetTurnToKeep === undefined || isNaN(targetTurnToKeep)) ? 0 : targetTurnToKeep;
         
+        // 当 safeTargetTurn > 0 时，寻找 targetTurnToKeep 的 turn/end 结束 seq 作为 atSeq
+        const atSeq = safeTargetTurn > 0 ? getForkSeqForTurn(globalCtx, sessions, sessionId, safeTargetTurn, chatSnapshot) : undefined;
+
+        // 提取被撤回轮次（targetTurnToKeep + 1）的图片附件（如果有）
+        const extractedFiles = [];
+        const currentTurnToRevert = safeTargetTurn + 1;
         try {
           if (chatSnapshot && chatSnapshot.nodes && session) {
-            for (const node of chatSnapshot.nodes.values()) {
+            const nodesList = typeof chatSnapshot.nodes.values === 'function' ? Array.from(chatSnapshot.nodes.values()) : (chatSnapshot.nodes || []);
+            for (const node of nodesList) {
               const nodeTurn = node.location?.kind === 'turn' || node.location?.kind === 'step' ? node.location.turn?.turn : undefined;
-              if (nodeTurn === currentTurn && (node.kind === 'user' || node.kind === 'steering' || node.type === 'user' || node.type === 'steering')) {
+              if (nodeTurn === currentTurnToRevert && (node.kind === 'user' || node.kind === 'steering' || node.type === 'user' || node.type === 'steering')) {
                 const contentBlocks = node.data?.content || [];
                 let imgIndex = 1;
                 for (const block of contentBlocks) {
@@ -139,35 +175,46 @@ window.__ModuleLoader__.load({
           }
         } catch(e) { console.warn("[dsh-revert] attachment parsing err:", e); }
 
-        const atSeq = getForkSeqForTurn(globalCtx, sessionId, targetTurn, chatSnapshot);
-        const summary = sessions?.list?.getSnapshot?.()?.byId?.[sessionId];
-
         // 文件恢复（git 操作）在后台异步执行
-        await fetch("/dsh-revert/rpc", {
+        fetch("/dsh-revert/rpc", {
           method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "rollback", payload: { sessionId, atSeq: atSeq === undefined ? null : atSeq, targetTurn, restoreFiles: true, cwd: summary?.cwd } })
+          body: JSON.stringify({ action: "rollback", payload: { sessionId, atSeq: (atSeq === undefined || atSeq <= 0) ? null : atSeq, targetTurn: safeTargetTurn, restoreFiles: true, cwd: summary?.cwd } })
         }).catch(e => console.error("[dsh-revert] RPC error:", e));
 
         let childId;
-        if (targetTurn === 0) {
+        if (safeTargetTurn === 0 || atSeq === undefined) {
+          // 撤回第 1 轮消息（保留 0 轮历史）：创建一个全新的干净会话
           childId = await sessions.create({
             workspaceId: summary?.workspaceId,
             cwd: summary?.cwd
           });
-          sessions.open(childId);
         } else {
+          // 撤回第 N 轮消息（保留 N-1 轮历史）：Fork 在 targetTurnToKeep 的 turn/end 处精确截断
           childId = await sessions.fork({ sessionId, atSeq, increaseTitle: false });
           
-          // 通知后端拷贝外部文件的快照数据到子会话
-          await fetch("/dsh-revert/rpc", {
+          fetch("/dsh-revert/rpc", {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ action: "fork_session", payload: { oldSessionId: sessionId, newSessionId: childId } })
           }).catch(e => console.error("[dsh-revert] fork rpc error:", e));
-
-          sessions.open(childId);
         }
 
-        // 归档旧会话以避免侧边栏出现重复同名会话
+        // 导航与页面切换
+        const doOpenSession = () => {
+          try {
+            if (uiWorkspace && typeof uiWorkspace.openSession === 'function') {
+              uiWorkspace.openSession(childId);
+            } else if (sessions && typeof sessions.open === 'function') {
+              sessions.open(childId);
+            }
+          } catch (e) {
+            console.warn('[dsh-revert] openSession try failed:', e);
+          }
+        };
+
+        doOpenSession();
+        setTimeout(doOpenSession, 60);
+
+        // 归档旧会话以避免侧边栏重复
         if (sessionId && sessionId !== childId) {
           try {
             const ws = workspacesService || (globalCtx?.get ? globalCtx.get('workspaces') : globalCtx?.workspaces);
@@ -181,7 +228,34 @@ window.__ModuleLoader__.load({
           }
         }
 
-        fillComposerText(promptText);
+        // 设置新会话的输入框草稿
+        if (promptText) {
+          const applyDraft = () => {
+            let ok = false;
+            try {
+              const conv = conversationService || (globalCtx?.get ? globalCtx.get('conversation') : globalCtx?.conversation);
+              if (conv && conv.input && typeof conv.input.shell === 'function') {
+                const shell = conv.input.shell(childId);
+                if (shell && typeof shell.setDraft === 'function') {
+                  shell.setDraft(promptText);
+                  ok = true;
+                }
+              }
+            } catch (e) {}
+            try {
+              const binding = uiConversation?.binding?.(childId);
+              if (binding && typeof binding.setDraft === 'function') {
+                binding.setDraft(promptText);
+                ok = true;
+              }
+            } catch (e) {}
+            return ok;
+          };
+
+          applyDraft();
+          setTimeout(applyDraft, 100);
+          setTimeout(applyDraft, 300);
+        }
 
         // 回填图片附件
         if (extractedFiles.length > 0) {
@@ -201,10 +275,10 @@ window.__ModuleLoader__.load({
               setTimeout(() => tryDrop(retries - 1), 100);
             }
           };
-          setTimeout(() => tryDrop(15), 150);
+          setTimeout(() => tryDrop(15), 300);
         }
       } catch (err) {
-        console.error("[dsh-revert] Error:", err);
+        console.error("[dsh-revert] Error during revert:", err);
       } finally {
         isReverting = false;
       }
@@ -218,10 +292,20 @@ window.__ModuleLoader__.load({
         const bubble = row.querySelector('[class*="bubble"]');
         if (!actionsRow && !bubble) return;
         const flowItem = row.closest('[data-chat-flow-key]') || row.closest('[class*="flowItem"]') || row;
-        const allUserItems = Array.from(document.querySelectorAll('[data-chat-flow-kind="user"], [data-chat-flow-kind="steering"]'));
+        const allUserItems = Array.from(document.querySelectorAll('div[data-chat-flow-kind="user"], div[data-chat-flow-kind="steering"]'));
         const turnAttr = flowItem.getAttribute('data-chat-turn') || row.getAttribute('data-chat-turn');
         const userIndex = allUserItems.indexOf(flowItem);
-        let turn = turnAttr !== null ? (Number(turnAttr) - 1) : (userIndex >= 0 ? userIndex : null);
+        
+        let currentTurnNum = null;
+        if (turnAttr !== null && turnAttr !== undefined && turnAttr !== '') {
+          currentTurnNum = Number(turnAttr);
+        } else if (userIndex >= 0) {
+          currentTurnNum = userIndex + 1;
+        }
+
+        // 计算需要保留的历史轮次（目标消息之前的轮次）
+        let targetTurnToKeep = (currentTurnNum !== null && !isNaN(currentTurnNum)) ? (currentTurnNum - 1) : 0;
+        if (targetTurnToKeep < 0) targetTurnToKeep = 0;
 
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -233,8 +317,8 @@ window.__ModuleLoader__.load({
         btn.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          const text = bubble ? bubble.textContent.trim() : '';
-          executeDirectRevert({ targetTurn: turn, promptText: text, flowItem });
+          const text = getCleanText(bubble);
+          executeDirectRevert({ targetTurnToKeep, promptText: text, flowItem });
         };
 
         if (actionsRow) {
@@ -251,6 +335,8 @@ window.__ModuleLoader__.load({
       sessionsService = ctx.get ? ctx.get('sessions') : ctx.sessions;
       uiConversationService = ctx.get ? ctx.get('uiConversation') : ctx.uiConversation;
       workspacesService = ctx.get ? ctx.get('workspaces') : ctx.workspaces;
+      uiWorkspaceService = ctx.get ? ctx.get('uiWorkspace') : ctx.uiWorkspace;
+      conversationService = ctx.get ? ctx.get('conversation') : ctx.conversation;
       
       injectStyles();
       const observer = new MutationObserver(() => { attachUserRevertIcons(); });
