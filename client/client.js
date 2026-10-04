@@ -19,7 +19,7 @@ window.__ModuleLoader__.load({
           height: calc(28px + var(--dsh-content-font-delta, 0px)) !important;
           padding: 6px !important;
           border: none !important;
-          border-radius: 28px !important;
+          border-radius: var(--dsw-radius-sm, 6px) !important;
           background: transparent !important;
           color: var(--dsw-alias-label-tertiary) !important;
           cursor: pointer !important;
@@ -30,6 +30,14 @@ window.__ModuleLoader__.load({
         .dsh-revert-icon-btn:hover {
           background: var(--dsw-alias-interactive-bg-hover) !important;
           color: var(--dsw-alias-label-secondary) !important;
+        }
+        .dsh-revert-icon-btn:focus,
+        .dsh-revert-icon-btn:focus-visible {
+          outline: none !important;
+          background: transparent !important;
+        }
+        .dsh-revert-icon-btn:hover:focus {
+          background: var(--dsw-alias-interactive-bg-hover) !important;
         }
         .dsh-revert-icon-btn svg,
         .dsh-revert-icon-btn svg path {
@@ -235,9 +243,10 @@ window.__ModuleLoader__.load({
         if (!actionsRow && !bubble) return;
 
         const previewTurn = Number(row.closest("[data-chat-turn]")?.dataset.chatTurn);
+        const copyBtn = actionsRow ? actionsRow.querySelector("button") : null;
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "dsh-revert-icon-btn";
+        btn.className = `${copyBtn ? copyBtn.className : ""} dsh-revert-icon-btn`.trim();
         btn.setAttribute("aria-label", "撤销至此轮对话");
         btn.title = previewTurn > 0 ? `撤回此轮对话 (第 ${previewTurn} 轮)` : "一键撤回至此轮";
         btn.innerHTML = `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3.5L2 7L5.5 10.5"/><path d="M2.5 7H9C11.5 7 13.5 9 13.5 11.5V12.5"/></svg>`;
@@ -249,7 +258,6 @@ window.__ModuleLoader__.load({
         };
 
         if (actionsRow) {
-          const copyBtn = actionsRow.querySelector("button");
           if (copyBtn?.nextSibling) actionsRow.insertBefore(btn, copyBtn.nextSibling);
           else actionsRow.appendChild(btn);
         } else {
