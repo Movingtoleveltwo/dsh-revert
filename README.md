@@ -10,8 +10,8 @@
 DeepSeek Harness (DSH) 现代化对话回退与重试插件：纯 UI 图形化交互、原地 Prompt 微调、支持工作区与外部文件双引擎安全快照恢复。
 
 ### ✨ 核心特性
-- 🎯 **纯 UI 图形化交互**：无需记忆任何复杂的斜杠指令，鼠标悬浮在任意对话消息下方即可点击「↩️ 还原重试」；
-- ✏️ **原地微调 Prompt**：弹窗直接回显该轮用户输入的 Prompt，修改后自动聚焦回填到聊天输入框；
+- 🎯 **纯 UI 图形化交互**：无需记忆任何复杂的斜杠指令，鼠标悬浮在任意对话消息下方即可点击「↩️ 编辑重发」；
+- ✏️ **原位内联编辑（Codex Desktop 风格）**：点击后该条消息原位变为编辑卡片，回显该轮 Prompt 与图片附件，可自由修改；点 Send 才执行回退并自动重发，点 Cancel / Esc 则随时放弃，全程零副作用；
 - 🛡️ **工作区内快照（Shadow Git）**：在独立影子存储中维护轻量快照，秒级撤销代码变动，**绝不污染或重置用户自己的本地 Git 分支**；
 - 🌐 **工作区外部安全恢复（External Interceptor）**：精准拦截 AI 在工作区外部编辑过的文件，并在回退时一并安全写回原始状态；
 - 📱 **多端全适配**：电脑端、平板端与手机端界面完美适配。
@@ -40,8 +40,8 @@ npm link /path/to/dsh-revert
 A modern UI-based rewind and retry plugin for DeepSeek Harness (DSH). Features inline prompt editing and a flawless dual-engine state recovery system (Workspace ShadowGit + External Tracker).
 
 ### ✨ Key Features
-- 🎯 **Pure UI Interaction**: Hover over any chat message and click the "↩️ Rewind" button. No slash commands required.
-- ✏️ **Inline Prompt Editing**: Automatically extracts and fills the prompt from the reverted turn into your composer.
+- 🎯 **Pure UI Interaction**: Hover over any chat message and click the "↩️ Edit & resend" button. No slash commands required.
+- ✏️ **In-place Inline Editing (Codex Desktop style)**: The message turns into an edit card in place, pre-filled with that turn's prompt and images; only Send performs the rewind and resends, while Cancel / Esc aborts at any time with zero side effects;
 - 🛡️ **Workspace Shadow Git**: Maintains lightweight, isolated snapshots of your workspace. Rolls back AI code changes in seconds **without polluting your own Git repository**.
 - 🌐 **External File Interceptor**: Safely tracks and reverts files modified by the AI *outside* of the current workspace.
 - 📱 **Fully Responsive**: Seamlessly adapts to Desktop, Tablet, and Mobile views.
