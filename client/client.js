@@ -5,6 +5,8 @@ window.__ModuleLoader__.load({
     const inject = ["sessions", "uiConversation", "uiSession", "workspaces", "uiWorkspace", "conversation"];
 
     let isReverting = false;
+    // 当前打开的原位内联编辑卡片（同时只允许一个）
+    let activeEditCard = null;
 
     function injectStyles() {
       if (document.getElementById("dsh-revert-styles")) return;
@@ -14,7 +16,7 @@ window.__ModuleLoader__.load({
         .dsh-revert-icon-btn {
           display: inline-flex !important;
           align-items: center !important;
-          justify-content: center !important;
+          justify-content: center;
           width: calc(28px + var(--dsh-content-font-delta, 0px)) !important;
           height: calc(28px + var(--dsh-content-font-delta, 0px)) !important;
           padding: 6px !important;
@@ -45,6 +47,106 @@ window.__ModuleLoader__.load({
           height: calc(15px + var(--dsh-content-font-delta, 0px)) !important;
           fill: none !important;
           stroke: currentColor !important;
+        }
+        .dsh-revert-edit-card {
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 8px !important;
+          padding: 10px 12px !important;
+          margin: 4px 0 !important;
+          border: 1px solid var(--dsw-alias-brand-primary, #4d6bfe) !important;
+          border-radius: var(--dsw-radius-lg, 12px) !important;
+          background: var(--dsw-alias-bg-base, #fff) !important;
+          box-sizing: border-box !important;
+        }
+        .dsh-revert-edit-textarea {
+          width: 100% !important;
+          min-height: calc(44px + var(--dsh-content-font-delta, 0px)) !important;
+          max-height: 40vh !important;
+          padding: 0 !important;
+          border: none !important;
+          outline: none !important;
+          resize: none !important;
+          background: transparent !important;
+          color: var(--dsw-alias-label-primary) !important;
+          font-family: inherit !important;
+          font-size: calc(14px + var(--dsh-content-font-delta, 0px)) !important;
+          line-height: 1.5 !important;
+          overflow-y: auto !important;
+          box-sizing: border-box !important;
+        }
+        .dsh-revert-edit-thumbs {
+          display: flex !important;
+          flex-wrap: wrap !important;
+          gap: 6px !important;
+        }
+        .dsh-revert-edit-thumb {
+          position: relative !important;
+          width: 44px !important;
+          height: 44px !important;
+          border-radius: var(--dsw-radius-sm, 6px) !important;
+          overflow: visible !important;
+          flex: 0 0 auto !important;
+        }
+        .dsh-revert-edit-thumb img {
+          width: 44px !important;
+          height: 44px !important;
+          object-fit: cover !important;
+          border-radius: var(--dsw-radius-sm, 6px) !important;
+          border: 1px solid var(--dsw-alias-border-l, rgba(0,0,0,0.08)) !important;
+          display: block !important;
+        }
+        .dsh-revert-edit-thumb-remove {
+          position: absolute !important;
+          top: -6px !important;
+          right: -6px !important;
+          width: 16px !important;
+          height: 16px !important;
+          padding: 0 !important;
+          border: none !important;
+          border-radius: 50% !important;
+          background: var(--dsw-alias-label-primary, #1f2329) !important;
+          color: var(--dsw-alias-label-primary-inverted, #fff) !important;
+          font-size: 10px !important;
+          line-height: 1 !important;
+          cursor: pointer !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+        }
+        .dsh-revert-edit-footer {
+          display: flex !important;
+          justify-content: flex-end !important;
+          align-items: center !important;
+          gap: 8px !important;
+        }
+        .dsh-revert-edit-cancel {
+          padding: 6px 14px !important;
+          border: 1px solid var(--dsw-alias-border-l, rgba(0,0,0,0.12)) !important;
+          border-radius: var(--dsw-radius-sm, 6px) !important;
+          background: transparent !important;
+          color: var(--dsw-alias-label-secondary) !important;
+          font-size: calc(13px + var(--dsh-content-font-delta, 0px)) !important;
+          cursor: pointer !important;
+          transition: background-color 0.15s ease !important;
+        }
+        .dsh-revert-edit-cancel:hover:not(:disabled) {
+          background: var(--dsw-alias-interactive-bg-hover) !important;
+        }
+        .dsh-revert-edit-send {
+          padding: 6px 16px !important;
+          border: none !important;
+          border-radius: var(--dsw-radius-sm, 6px) !important;
+          background: var(--dsw-alias-button-primary-fill, #1f2329) !important;
+          color: var(--dsw-alias-label-primary-inverted, #fff) !important;
+          font-size: calc(13px + var(--dsh-content-font-delta, 0px)) !important;
+          cursor: pointer !important;
+          transition: opacity 0.15s ease !important;
+        }
+        .dsh-revert-edit-send:disabled,
+        .dsh-revert-edit-cancel:disabled {
+          opacity: 0.45 !important;
+          cursor: not-allowed !important;
         }
       `;
       document.head.appendChild(style);
@@ -78,40 +180,82 @@ window.__ModuleLoader__.load({
       return (typeof endSeq === "number" && endSeq > 0) ? endSeq : undefined;
     }
 
-    async function executeDirectRevert(ctx, { row, promptText }) {
+    // 定位消息行所属的对话轮次编号
+    function resolveTurnNumber(row, chatSnapshot) {
+      const turnSeatEl = row.closest("[data-chat-turn]");
+      let currentTurnNum = Number(turnSeatEl?.dataset.chatTurn);
+
+      if (!currentTurnNum || currentTurnNum <= 0) {
+        const nodeKey = row.closest("[data-chat-node-key]")?.dataset.chatNodeKey;
+        if (nodeKey) {
+          currentTurnNum = getNodeTurn(chatSnapshot?.nodes?.get(nodeKey));
+        }
+      }
+
+      return (currentTurnNum && !isNaN(currentTurnNum) && currentTurnNum > 0) ? currentTurnNum : undefined;
+    }
+
+    // 提取被撤回轮次的图片附件，并检测被撤回的轮次中是否包含工具调用
+    async function extractTurnData(binding, chatSnapshot, currentTurnNum, safeTargetTurn) {
+      const extractedFiles = [];
+      let hasToolCallsInRevertedTurns = false;
+      const nodes = chatSnapshot?.nodes?.values() || [];
+
+      for (const node of nodes) {
+        const nodeTurn = getNodeTurn(node);
+        if (!nodeTurn) continue;
+
+        if (nodeTurn > safeTargetTurn && node.kind.includes("tool")) {
+          hasToolCallsInRevertedTurns = true;
+        }
+
+        if (nodeTurn === currentTurnNum && (node.kind === "user" || node.kind === "steering") && binding?.session) {
+          let imgIndex = 1;
+          for (const block of (node.data?.content || [])) {
+            if (block.type === "image" && block.attachment) {
+              try {
+                const res = await binding.session.readAttachment(block.attachment.attachmentId);
+                if (res?.ok && res.value?.data) {
+                  const mediaType = block.attachment.mediaType || res.value.attachment?.mediaType || "image/png";
+                  extractedFiles.push(new File([new Blob([res.value.data], { type: mediaType })], `image-${imgIndex++}.png`, { type: mediaType }));
+                }
+              } catch (e) {
+                console.warn("[dsh-revert] extract attachment err:", e);
+              }
+            }
+          }
+        }
+      }
+
+      if (!hasToolCallsInRevertedTurns) {
+        const entries = binding?.eventSource?.getSnapshot()?.entries || [];
+        hasToolCallsInRevertedTurns = entries.some(e => e.type === "tool/call" && e.data?.turn > safeTargetTurn);
+      }
+
+      return { extractedFiles, hasToolCallsInRevertedTurns };
+    }
+
+    // 真正执行回退：Fork/新建会话 + RPC 回滚文件 + 切换会话 + 回填（可选自动发送）
+    async function executeRevertFlow(ctx, {
+      sessionId,
+      safeTargetTurn,
+      atSeq: presetAtSeq,
+      hasToolCallsInRevertedTurns,
+      extractedFiles,
+      promptText,
+      autoSubmit = false,
+    }) {
       if (isReverting) return;
       isReverting = true;
 
       try {
-        const { sessions, uiConversation, uiSession, workspaces, uiWorkspace, conversation } = ctx;
-
-        const sessionId = uiSession.adapter.current.getSnapshot()?.key;
-        if (!sessionId) throw new Error("No active session");
+        const { sessions, uiConversation, workspaces, uiWorkspace, conversation } = ctx;
 
         const binding = sessions.binding(sessionId);
         const chatSnapshot = uiConversation.binding(sessionId).target("chat").getSnapshot();
         const summary = sessions.list.getSnapshot().byId[sessionId];
 
-        // 1. 确定当前消息所在的轮次编号 (currentTurnNum)
-        const turnSeatEl = row.closest("[data-chat-turn]");
-        let currentTurnNum = Number(turnSeatEl?.dataset.chatTurn);
-
-        if (!currentTurnNum || currentTurnNum <= 0) {
-          const nodeKey = row.closest("[data-chat-node-key]")?.dataset.chatNodeKey;
-          if (nodeKey) {
-            currentTurnNum = getNodeTurn(chatSnapshot?.nodes?.get(nodeKey));
-          }
-        }
-
-        if (!currentTurnNum || isNaN(currentTurnNum) || currentTurnNum <= 0) {
-          console.error("[dsh-revert] 无法精确定位该消息所属的对话轮次编号，终止回退以保护代码安全。");
-          window.alert("⚠️ 无法精确定位该消息所属的对话轮次编号，已阻止回退以保护代码安全。请刷新页面后重试。");
-          return;
-        }
-
-        const safeTargetTurn = Math.max(0, currentTurnNum - 1);
-
-        // Turn 0 二次确认拦截
+        // Turn 0 二次确认（在真正提交时才询问）
         if (safeTargetTurn === 0) {
           const confirmed = window.confirm(
             "⚠️ 警告：您正在撤销第 1 轮对话。\n\n" +
@@ -121,50 +265,14 @@ window.__ModuleLoader__.load({
           if (!confirmed) return;
         }
 
-        const atSeq = safeTargetTurn > 0 ? getForkSeqForTurn(binding, chatSnapshot, safeTargetTurn) : undefined;
+        const atSeq = safeTargetTurn > 0 ? (presetAtSeq ?? getForkSeqForTurn(binding, chatSnapshot, safeTargetTurn)) : undefined;
         if (safeTargetTurn > 0 && (!atSeq || atSeq <= 0)) {
           console.error(`[dsh-revert] 未能定位目标轮次 #${safeTargetTurn} 的截断位置 (atSeq)，终止操作。`);
           window.alert(`⚠️ 未能定位第 ${safeTargetTurn} 轮的历史截断点 (atSeq)，已终止回退以保护当前会话与代码安全。`);
           return;
         }
 
-        // 2. 提取被撤回轮次的图片附件（如果有）与检测是否包含工具调用
-        const extractedFiles = [];
-        let hasToolCallsInRevertedTurns = false;
-        const nodes = chatSnapshot?.nodes?.values() || [];
-
-        for (const node of nodes) {
-          const nodeTurn = getNodeTurn(node);
-          if (!nodeTurn) continue;
-
-          if (nodeTurn > safeTargetTurn && node.kind.includes("tool")) {
-            hasToolCallsInRevertedTurns = true;
-          }
-
-          if (nodeTurn === currentTurnNum && (node.kind === "user" || node.kind === "steering") && binding?.session) {
-            let imgIndex = 1;
-            for (const block of (node.data?.content || [])) {
-              if (block.type === "image" && block.attachment) {
-                try {
-                  const res = await binding.session.readAttachment(block.attachment.attachmentId);
-                  if (res?.ok && res.value?.data) {
-                    const mediaType = block.attachment.mediaType || res.value.attachment?.mediaType || "image/png";
-                    extractedFiles.push(new File([new Blob([res.value.data], { type: mediaType })], `image-${imgIndex++}.png`, { type: mediaType }));
-                  }
-                } catch (e) {
-                  console.warn("[dsh-revert] extract attachment err:", e);
-                }
-              }
-            }
-          }
-        }
-
-        if (!hasToolCallsInRevertedTurns) {
-          const entries = binding?.eventSource?.getSnapshot()?.entries || [];
-          hasToolCallsInRevertedTurns = entries.some(e => e.type === "tool/call" && e.data?.turn > safeTargetTurn);
-        }
-
-        // 3. 解析所属工作区，创建或 Fork 新会话
+        // 1. 解析所属工作区，创建或 Fork 新会话
         const wsItems = workspaces.list.getSnapshot()?.items || [];
         const currentWorkspace = wsItems.find(item => item.sessionIds?.includes(sessionId))
           || wsItems.find(item => item.path === summary?.cwd);
@@ -186,7 +294,7 @@ window.__ModuleLoader__.load({
           workspaces.insertSessionBefore(targetWorkspaceId, childId).catch(e => console.warn("[dsh-revert] insertSessionBefore err:", e));
         }
 
-        // 4. 触发后端文件恢复
+        // 2. 触发后端文件恢复
         fetch("/dsh-revert/rpc", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -202,13 +310,13 @@ window.__ModuleLoader__.load({
           }),
         }).catch(e => console.error("[dsh-revert] rollback rpc error:", e));
 
-        // 5. 切换至新会话并归档旧会话
+        // 3. 切换至新会话并归档旧会话
         uiWorkspace.openSession(childId);
         if (sessionId !== childId) {
           workspaces.archiveSession(sessionId).catch(e => console.warn("[dsh-revert] archiveSession err:", e));
         }
 
-        // 6. 回填输入框草稿与图片附件
+        // 4. 回填子会话输入框草稿与图片附件
         let attachmentsRestored = extractedFiles.length === 0;
         const restoreComposerState = () => {
           try {
@@ -227,11 +335,202 @@ window.__ModuleLoader__.load({
 
         restoreComposerState();
         [80, 200, 450].forEach(ms => setTimeout(restoreComposerState, ms));
+
+        // 5. 延迟回退模式：回填完成后自动发送
+        if (autoSubmit) {
+          const trySubmit = (attempt) => {
+            try {
+              const shell = conversation.input.shell(childId);
+              const draftReady = !promptText || shell.snapshot?.draft === promptText;
+              const phase = shell.snapshot?.phase;
+              if (draftReady && attachmentsRestored && (phase === "plain" || phase === undefined)) {
+                shell.submit();
+                return;
+              }
+            } catch {}
+            if (attempt < 12) setTimeout(() => trySubmit(attempt + 1), 120);
+          };
+          setTimeout(() => trySubmit(0), 520);
+        }
       } catch (err) {
         console.error("[dsh-revert] Error during revert:", err);
       } finally {
         isReverting = false;
       }
+    }
+
+    // ============ 消息原位内联编辑卡片（Codex Desktop 风格） ============
+
+    // 关闭当前打开的编辑卡片并还原消息显示；同一时间只允许一个卡片存在
+    function closeInlineEditor() {
+      const active = activeEditCard;
+      if (!active) return;
+      activeEditCard = null;
+      if (active.cardEl.isConnected) active.cardEl.remove();
+      if (active.rowEl) active.rowEl.style.display = "";
+      for (const url of active.objectUrls) URL.revokeObjectURL(url);
+    }
+
+    // 点击 ↩️：在该条消息原位渲染内联编辑卡片（不触发任何回退）
+    async function openInlineEditor(ctx, { row, promptText }) {
+      if (isReverting) return;
+
+      const { sessions, uiConversation, uiSession } = ctx;
+      const sessionId = uiSession.adapter.current.getSnapshot()?.key;
+      if (!sessionId) { console.error("[dsh-revert] No active session"); return; }
+
+      const binding = sessions.binding(sessionId);
+      const chatSnapshot = uiConversation.binding(sessionId).target("chat").getSnapshot();
+
+      const currentTurnNum = resolveTurnNumber(row, chatSnapshot);
+      if (!currentTurnNum) {
+        console.error("[dsh-revert] 无法精确定位该消息所属的对话轮次编号，终止回退以保护代码安全。");
+        window.alert("⚠️ 无法精确定位该消息所属的对话轮次编号，已阻止回退以保护代码安全。请刷新页面后重试。");
+        return;
+      }
+
+      const safeTargetTurn = Math.max(0, currentTurnNum - 1);
+
+      // 提前校验截断点，避免打开无法兑现的编辑卡片（turn 0 的清空确认推迟到 Send 时）
+      const atSeq = safeTargetTurn > 0 ? getForkSeqForTurn(binding, chatSnapshot, safeTargetTurn) : undefined;
+      if (safeTargetTurn > 0 && (!atSeq || atSeq <= 0)) {
+        console.error(`[dsh-revert] 未能定位目标轮次 #${safeTargetTurn} 的截断位置 (atSeq)，终止操作。`);
+        window.alert(`⚠️ 未能定位第 ${safeTargetTurn} 轮的历史截断点 (atSeq)，已终止回退以保护当前会话与代码安全。`);
+        return;
+      }
+
+      // 提取该轮的图片附件与工具调用标记（异步）
+      const { extractedFiles, hasToolCallsInRevertedTurns } = await extractTurnData(binding, chatSnapshot, currentTurnNum, safeTargetTurn);
+
+      // 打开新卡片前自动关闭旧卡片（不触发回退）
+      closeInlineEditor();
+
+      // ---- 构建卡片 ----
+      const keptFiles = [...extractedFiles];
+      const objectUrls = [];
+
+      const card = document.createElement("div");
+      card.className = "dsh-revert-edit-card";
+
+      const textarea = document.createElement("textarea");
+      textarea.className = "dsh-revert-edit-textarea";
+      textarea.value = promptText;
+      textarea.rows = 1;
+      const autoGrow = () => {
+        textarea.style.height = "auto";
+        textarea.style.height = `${Math.min(textarea.scrollHeight, Math.round(window.innerHeight * 0.4))}px`;
+      };
+      textarea.addEventListener("input", () => { autoGrow(); syncSendState(); });
+      card.appendChild(textarea);
+
+      // 图片缩略图条（可单独移除）
+      if (keptFiles.length > 0) {
+        const thumbs = document.createElement("div");
+        thumbs.className = "dsh-revert-edit-thumbs";
+        keptFiles.forEach((file) => {
+          const url = URL.createObjectURL(file);
+          objectUrls.push(url);
+          const wrap = document.createElement("div");
+          wrap.className = "dsh-revert-edit-thumb";
+          const img = document.createElement("img");
+          img.src = url;
+          img.alt = file.name;
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "dsh-revert-edit-thumb-remove";
+          remove.textContent = "✕";
+          remove.setAttribute("aria-label", "移除该图片");
+          remove.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const idx = keptFiles.indexOf(file);
+            if (idx >= 0) keptFiles.splice(idx, 1);
+            URL.revokeObjectURL(url);
+            wrap.remove();
+            syncSendState();
+          };
+          wrap.appendChild(img);
+          wrap.appendChild(remove);
+          thumbs.appendChild(wrap);
+        });
+        card.appendChild(thumbs);
+      }
+
+      // 底部按钮
+      const footer = document.createElement("div");
+      footer.className = "dsh-revert-edit-footer";
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "dsh-revert-edit-cancel";
+      cancelBtn.textContent = "Cancel";
+      cancelBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeInlineEditor();
+      };
+
+      const sendBtn = document.createElement("button");
+      sendBtn.type = "button";
+      sendBtn.className = "dsh-revert-edit-send";
+      sendBtn.textContent = "Send";
+
+      const syncSendState = () => {
+        sendBtn.disabled = isReverting || (textarea.value.trim() === "" && keptFiles.length === 0);
+      };
+
+      sendBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (sendBtn.disabled || isReverting) return;
+        const editedText = textarea.value;
+        if (editedText.trim() === "" && keptFiles.length === 0) return;
+
+        // loading / 禁用态，防止重复点击
+        sendBtn.disabled = true;
+        cancelBtn.disabled = true;
+        sendBtn.textContent = "Sending…";
+
+        const filesToSend = [...keptFiles];
+        closeInlineEditor();
+
+        executeRevertFlow(ctx, {
+          sessionId,
+          safeTargetTurn,
+          atSeq,
+          hasToolCallsInRevertedTurns,
+          extractedFiles: filesToSend,
+          promptText: editedText,
+          autoSubmit: true,
+        });
+      };
+
+      footer.appendChild(cancelBtn);
+      footer.appendChild(sendBtn);
+      card.appendChild(footer);
+
+      // Esc（焦点在卡片内时）取消编辑，不触发回退
+      card.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          closeInlineEditor();
+        }
+      });
+
+      // 原位替换：隐藏原消息行，卡片插在其位置（DOM 保留，取消时还原）
+      row.style.display = "none";
+      row.parentElement.insertBefore(card, row);
+
+      activeEditCard = { rowEl: row, cardEl: card, objectUrls };
+
+      syncSendState();
+      autoGrow();
+      // 聚焦并把光标移到文本末尾
+      requestAnimationFrame(() => {
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      });
     }
 
     function attachUserRevertIcons(ctx) {
@@ -247,14 +546,14 @@ window.__ModuleLoader__.load({
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = `${copyBtn ? copyBtn.className : ""} dsh-revert-icon-btn`.trim();
-        btn.setAttribute("aria-label", "撤销至此轮对话");
-        btn.title = previewTurn > 0 ? `撤回此轮对话 (第 ${previewTurn} 轮)` : "一键撤回至此轮";
+        btn.setAttribute("aria-label", "编辑并重发此轮对话");
+        btn.title = previewTurn > 0 ? `编辑并重发此轮 (撤回到第 ${previewTurn - 1} 轮)` : "编辑并重发此轮";
         btn.innerHTML = `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3.5L2 7L5.5 10.5"/><path d="M2.5 7H9C11.5 7 13.5 9 13.5 11.5V12.5"/></svg>`;
 
         btn.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          executeDirectRevert(ctx, { row, promptText: getCleanText(bubble) });
+          openInlineEditor(ctx, { row, promptText: getCleanText(bubble) });
         };
 
         if (actionsRow) {
