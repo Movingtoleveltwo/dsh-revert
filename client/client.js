@@ -479,9 +479,7 @@ window.__ModuleLoader__.load({
         sendBtn.disabled = isReverting || (textarea.value.trim() === "" && keptFiles.length === 0);
       };
 
-      sendBtn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+      const doSend = () => {
         if (sendBtn.disabled || isReverting) return;
         const editedText = textarea.value;
         if (editedText.trim() === "" && keptFiles.length === 0) return;
@@ -505,16 +503,26 @@ window.__ModuleLoader__.load({
         });
       };
 
+      sendBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        doSend();
+      };
+
       footer.appendChild(cancelBtn);
       footer.appendChild(sendBtn);
       card.appendChild(footer);
 
-      // Esc（焦点在卡片内时）取消编辑，不触发回退
+      // Esc（焦点在卡片内时）取消编辑，不触发回退；Enter 直接发送（Shift+Enter 换行，输入法组合中不触发）
       card.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
           closeInlineEditor();
+        } else if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.target === textarea) {
+          e.preventDefault();
+          e.stopPropagation();
+          doSend();
         }
       });
 
