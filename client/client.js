@@ -575,8 +575,17 @@ window.__ModuleLoader__.load({
 
     function apply(ctx) {
       injectStyles();
+      // HMR 重载后清理上一个实例：断开旧 observer、移除旧按钮与编辑卡片，避免点击旧按钮时使用已失活的 ctx
+      if (typeof window.__dshRevertCleanup === "function") window.__dshRevertCleanup();
       const observer = new MutationObserver(() => attachUserRevertIcons(ctx));
       observer.observe(document.body, { childList: true, subtree: true });
+      window.__dshRevertCleanup = () => {
+        observer.disconnect();
+        document.querySelectorAll(".dsh-revert-icon-btn, .dsh-revert-edit-card").forEach(el => {
+          if (el.classList.contains("dsh-revert-edit-card") && el.nextElementSibling) el.nextElementSibling.style.display = "";
+          el.remove();
+        });
+      };
       setTimeout(() => attachUserRevertIcons(ctx), 300);
     }
 
