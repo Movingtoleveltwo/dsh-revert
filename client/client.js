@@ -1,7 +1,6 @@
 window.__ModuleLoader__.load({
   id: "dsh-revert",
   factory: () => {
-    const name = "dsh-revert";
     const inject = ["sessions", "uiConversation", "uiSession", "workspaces", "uiWorkspace", "conversation"];
 
     let isReverting = false;
@@ -16,7 +15,7 @@ window.__ModuleLoader__.load({
         .dsh-revert-icon-btn {
           display: inline-flex !important;
           align-items: center !important;
-          justify-content: center;
+          justify-content: center !important;
           width: calc(28px + var(--dsh-content-font-delta, 0px)) !important;
           height: calc(28px + var(--dsh-content-font-delta, 0px)) !important;
           padding: 6px !important;
@@ -82,11 +81,6 @@ window.__ModuleLoader__.load({
         }
         .dsh-revert-edit-thumb {
           position: relative !important;
-          width: 44px !important;
-          height: 44px !important;
-          border-radius: var(--dsw-radius-sm, 6px) !important;
-          overflow: visible !important;
-          flex: 0 0 auto !important;
         }
         .dsh-revert-edit-thumb img {
           width: 44px !important;
@@ -120,15 +114,18 @@ window.__ModuleLoader__.load({
           align-items: center !important;
           gap: 8px !important;
         }
+        .dsh-revert-edit-cancel,
+        .dsh-revert-edit-send {
+          border-radius: var(--dsw-radius-sm, 6px) !important;
+          font-size: calc(13px + var(--dsh-content-font-delta, 0px)) !important;
+          cursor: pointer !important;
+          transition: background-color 0.15s ease, opacity 0.15s ease !important;
+        }
         .dsh-revert-edit-cancel {
           padding: 6px 14px !important;
           border: 1px solid var(--dsw-alias-border-l, rgba(0,0,0,0.12)) !important;
-          border-radius: var(--dsw-radius-sm, 6px) !important;
           background: transparent !important;
           color: var(--dsw-alias-label-secondary) !important;
-          font-size: calc(13px + var(--dsh-content-font-delta, 0px)) !important;
-          cursor: pointer !important;
-          transition: background-color 0.15s ease !important;
         }
         .dsh-revert-edit-cancel:hover:not(:disabled) {
           background: var(--dsw-alias-interactive-bg-hover) !important;
@@ -136,12 +133,8 @@ window.__ModuleLoader__.load({
         .dsh-revert-edit-send {
           padding: 6px 16px !important;
           border: none !important;
-          border-radius: var(--dsw-radius-sm, 6px) !important;
           background: var(--dsw-alias-button-primary-fill, #1f2329) !important;
           color: var(--dsw-alias-label-primary-inverted, #fff) !important;
-          font-size: calc(13px + var(--dsh-content-font-delta, 0px)) !important;
-          cursor: pointer !important;
-          transition: opacity 0.15s ease !important;
         }
         .dsh-revert-edit-send:disabled,
         .dsh-revert-edit-cancel:disabled {
@@ -235,42 +228,21 @@ window.__ModuleLoader__.load({
       return { extractedFiles, hasToolCallsInRevertedTurns };
     }
 
-    // 真正执行回退：Fork/新建会话 + RPC 回滚文件 + 切换会话 + 回填（可选自动发送）
+    // 真正执行回退：Fork/新建会话 + RPC 回滚文件 + 切换会话 + 回填并自动发送
     async function executeRevertFlow(ctx, {
       sessionId,
       safeTargetTurn,
-      atSeq: presetAtSeq,
+      atSeq,
       hasToolCallsInRevertedTurns,
       extractedFiles,
       promptText,
-      autoSubmit = false,
     }) {
       if (isReverting) return;
       isReverting = true;
 
       try {
-        const { sessions, uiConversation, workspaces, uiWorkspace, conversation } = ctx;
-
-        const binding = sessions.binding(sessionId);
-        const chatSnapshot = uiConversation.binding(sessionId).target("chat").getSnapshot();
+        const { sessions, workspaces, uiWorkspace, conversation } = ctx;
         const summary = sessions.list.getSnapshot().byId[sessionId];
-
-        // Turn 0 二次确认（在真正提交时才询问）
-        if (safeTargetTurn === 0) {
-          const confirmed = window.confirm(
-            "⚠️ 警告：您正在撤销第 1 轮对话。\n\n" +
-            "此操作将会【清空当前会话的全部历史消息】，并将工作区所有被修改的代码文件恢复到【最初始状态】。\n\n" +
-            "是否确认彻底清空并回滚？"
-          );
-          if (!confirmed) return;
-        }
-
-        const atSeq = safeTargetTurn > 0 ? (presetAtSeq ?? getForkSeqForTurn(binding, chatSnapshot, safeTargetTurn)) : undefined;
-        if (safeTargetTurn > 0 && (!atSeq || atSeq <= 0)) {
-          console.error(`[dsh-revert] 未能定位目标轮次 #${safeTargetTurn} 的截断位置 (atSeq)，终止操作。`);
-          window.alert(`⚠️ 未能定位第 ${safeTargetTurn} 轮的历史截断点 (atSeq)，已终止回退以保护当前会话与代码安全。`);
-          return;
-        }
 
         // 1. 解析所属工作区，创建或 Fork 新会话
         const wsItems = workspaces.list.getSnapshot()?.items || [];
@@ -336,22 +308,20 @@ window.__ModuleLoader__.load({
         restoreComposerState();
         [80, 200, 450].forEach(ms => setTimeout(restoreComposerState, ms));
 
-        // 5. 延迟回退模式：回填完成后自动发送
-        if (autoSubmit) {
-          const trySubmit = (attempt) => {
-            try {
-              const shell = conversation.input.shell(childId);
-              const draftReady = !promptText || shell.snapshot?.draft === promptText;
-              const phase = shell.snapshot?.phase;
-              if (draftReady && attachmentsRestored && (phase === "plain" || phase === undefined)) {
-                shell.submit();
-                return;
-              }
-            } catch {}
-            if (attempt < 12) setTimeout(() => trySubmit(attempt + 1), 120);
-          };
-          setTimeout(() => trySubmit(0), 520);
-        }
+        // 5. 回填完成后自动发送
+        const trySubmit = (attempt) => {
+          try {
+            const shell = conversation.input.shell(childId);
+            const draftReady = !promptText || shell.snapshot?.draft === promptText;
+            const phase = shell.snapshot?.phase;
+            if (draftReady && attachmentsRestored && (phase === "plain" || phase === undefined)) {
+              shell.submit();
+              return;
+            }
+          } catch {}
+          if (attempt < 12) setTimeout(() => trySubmit(attempt + 1), 120);
+        };
+        setTimeout(() => trySubmit(0), 520);
       } catch (err) {
         console.error("[dsh-revert] Error during revert:", err);
       } finally {
@@ -366,8 +336,8 @@ window.__ModuleLoader__.load({
       const active = activeEditCard;
       if (!active) return;
       activeEditCard = null;
-      if (active.cardEl.isConnected) active.cardEl.remove();
-      if (active.rowEl) active.rowEl.style.display = "";
+      active.cardEl.remove();
+      active.rowEl.style.display = "";
       for (const url of active.objectUrls) URL.revokeObjectURL(url);
     }
 
@@ -393,7 +363,7 @@ window.__ModuleLoader__.load({
 
       // 提前校验截断点，避免打开无法兑现的编辑卡片（turn 0 的清空确认推迟到 Send 时）
       const atSeq = safeTargetTurn > 0 ? getForkSeqForTurn(binding, chatSnapshot, safeTargetTurn) : undefined;
-      if (safeTargetTurn > 0 && (!atSeq || atSeq <= 0)) {
+      if (safeTargetTurn > 0 && !atSeq) {
         console.error(`[dsh-revert] 未能定位目标轮次 #${safeTargetTurn} 的截断位置 (atSeq)，终止操作。`);
         window.alert(`⚠️ 未能定位第 ${safeTargetTurn} 轮的历史截断点 (atSeq)，已终止回退以保护当前会话与代码安全。`);
         return;
@@ -406,7 +376,7 @@ window.__ModuleLoader__.load({
       closeInlineEditor();
 
       // ---- 构建卡片 ----
-      const keptFiles = [...extractedFiles];
+      const keptFiles = extractedFiles;
       const objectUrls = [];
 
       const card = document.createElement("div");
@@ -439,7 +409,6 @@ window.__ModuleLoader__.load({
           remove.type = "button";
           remove.className = "dsh-revert-edit-thumb-remove";
           remove.textContent = "✕";
-          remove.setAttribute("aria-label", "移除该图片");
           remove.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -465,7 +434,6 @@ window.__ModuleLoader__.load({
       cancelBtn.className = "dsh-revert-edit-cancel";
       cancelBtn.textContent = "Cancel";
       cancelBtn.onclick = (e) => {
-        e.preventDefault();
         e.stopPropagation();
         closeInlineEditor();
       };
@@ -481,15 +449,12 @@ window.__ModuleLoader__.load({
 
       const doSend = () => {
         if (sendBtn.disabled || isReverting) return;
-        const editedText = textarea.value;
-        if (editedText.trim() === "" && keptFiles.length === 0) return;
 
         // loading / 禁用态，防止重复点击
         sendBtn.disabled = true;
         cancelBtn.disabled = true;
         sendBtn.textContent = "Sending…";
 
-        const filesToSend = [...keptFiles];
         closeInlineEditor();
 
         executeRevertFlow(ctx, {
@@ -497,14 +462,12 @@ window.__ModuleLoader__.load({
           safeTargetTurn,
           atSeq,
           hasToolCallsInRevertedTurns,
-          extractedFiles: filesToSend,
-          promptText: editedText,
-          autoSubmit: true,
+          extractedFiles: keptFiles,
+          promptText: textarea.value,
         });
       };
 
       sendBtn.onclick = (e) => {
-        e.preventDefault();
         e.stopPropagation();
         doSend();
       };
@@ -535,10 +498,8 @@ window.__ModuleLoader__.load({
       syncSendState();
       autoGrow();
       // 聚焦并把光标移到文本末尾
-      requestAnimationFrame(() => {
-        textarea.focus();
-        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-      });
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     }
 
     function attachUserRevertIcons(ctx) {
@@ -564,12 +525,8 @@ window.__ModuleLoader__.load({
           openInlineEditor(ctx, { row, promptText: getCleanText(bubble) });
         };
 
-        if (actionsRow) {
-          if (copyBtn?.nextSibling) actionsRow.insertBefore(btn, copyBtn.nextSibling);
-          else actionsRow.appendChild(btn);
-        } else {
-          bubble.appendChild(btn);
-        }
+        if (actionsRow) actionsRow.insertBefore(btn, copyBtn?.nextSibling ?? null);
+        else bubble.appendChild(btn);
       });
     }
 
@@ -589,6 +546,6 @@ window.__ModuleLoader__.load({
       setTimeout(() => attachUserRevertIcons(ctx), 300);
     }
 
-    return { name, inject, apply };
+    return { name: "dsh-revert", inject, apply };
   },
 });
